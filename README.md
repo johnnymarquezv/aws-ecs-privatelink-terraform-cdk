@@ -1,6 +1,6 @@
 # Multi-Account Project with Bidirectional Intercommunicating Microservices Using ECS, PrivateLink, Terraform, and AWS CDK (TypeScript)
 
-This project implements a scalable, secure multi-account AWS architecture following the principle of **bidirectional intercommunication** among microservices deployed on ECS. It uses Terraform for foundational networking and AWS CDK (TypeScript) for application stacks, empowering private connectivity via AWS PrivateLink.
+This project implements a secure, scalable multi-account AWS architecture enabling bidirectional intercommunication among ECS microservices. It combines Terraform for foundational networking and AWS CDK (TypeScript) for microservices infrastructure, ensuring clear separation and independence.
 
 ---
 
@@ -9,16 +9,16 @@ This project implements a scalable, secure multi-account AWS architecture follow
 - [Overview](#overview)
 - [Architecture](#architecture)
     - [Multi-account roles](#multi-account-roles)
-    - [Bidirectional microservices intercommunication](#bidirectional-microservices-intercommunication)
+    - [Bidirectional microservices connectivity](#bidirectional-microservices-connectivity)
     - [Networking and private connectivity](#networking-and-private-connectivity)
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
-- [Folder Roles in AWS CDK (Lib vs Bin)](#folder-roles-in-aws-cdk-lib-vs-bin)
+- [Folder Roles in AWS CDK](#folder-roles-in-aws-cdk)
 - [Deployment Workflow](#deployment-workflow)
-    - [Terraform in Networking Account](#networking-account-terraform)
-    - [CDK in Microservices Accounts](#microservices-accounts-aws-cdk)
+    - [Step 1 – Networking (Terraform, Networking Account)](#step-1--networking-terraform-networking-account)
+    - [Step 2 – Microservices (AWS CDK, Microservices Accounts)](#step-2--microservices-aws-cdk-microservices-accounts)
 - [Development Process](#development-process)
-- [Why Hybrid Terraform + CDK?](#why-hybrid-terraform--aws-cdk)
+- [Why Hybrid Terraform + AWS CDK?](#why-hybrid-terraform--aws-cdk)
 - [Additional Resources](#additional-resources)
 - [License](#license)
 
@@ -26,10 +26,14 @@ This project implements a scalable, secure multi-account AWS architecture follow
 
 ## Overview
 
-- Foundational network (VPC, subnets, routing, VPC Endpoint Services) provisioned via Terraform in a **Networking Account**.
-- Microservices deployed on ECS via AWS CDK in **separate Microservices Accounts**.
-- Bidirectional microservice communication achieved via **Network Load Balancers (NLBs)** exposed through **interface VPC Endpoints (AWS PrivateLink)**.
-- Strong security enforced by private cross-account connectivity without Internet exposure.
+- **Terraform** provisions **core VPC networking infrastructure** — VPC, subnets, IGWs, NAT gateways — in a centralized **Networking Account**, providing a stable network foundation.
+- **AWS CDK** provisions **microservices infrastructure** in separate **Microservices Accounts**:
+    - ECS clusters, services, task definitions.
+    - Each microservice exposes its API by provisioning **Network Load Balancers (NLBs)**.
+    - CDK manages **VPC Endpoint Services** to expose these NLBs, acting as provider endpoints.
+    - CDK also provisions interface VPC endpoints to consume **other microservices' VPC Endpoint Services**, enabling private, bidirectional communication between microservices across accounts.
+
+This split keeps Terraform and AWS CDK **independent**, with Terraform managing shared networking, and CDK fully responsible for application exposure and inter-service connectivity.
 
 ---
 
@@ -37,21 +41,26 @@ This project implements a scalable, secure multi-account AWS architecture follow
 
 ### Multi-account roles
 
-- **Networking Account:** Hosts core network infrastructure and exposes microservices as VPC Endpoint Services.
-- **Microservices Accounts:** Host ECS microservices fronted by NLBs, consume each other's services via interface VPC endpoints enabling bidirectional communication.
+- **Networking Account:**
+    - Owns the core VPC, subnets, routing, NAT gateways, and Internet Gateway.
+    - Does **not** provision microservice exposure resources.
 
-### Bidirectional intercommunication
+- **Microservices Accounts:**
+    - Own ECS microservices, their NLBs, and corresponding **VPC Endpoint Services** (provider part).
+    - Own the interface VPC endpoints to consume other microservices' exposed services (consumer part).
+    - Enable cross-account private connectivity using AWS PrivateLink.
 
-- Services in each account publish their APIs via NLBs.
-- Each service registers its NLB as a VPC Endpoint Service in the Networking Account.
-- Microservices consume each other's services securely across accounts over AWS backbone using interface VPC endpoints.
-- This design avoids any public internet exposure and supports high performance private traffic flows.
+### Bidirectional microservices connectivity
+
+- Microservices expose APIs through NLBs paired with VPC Endpoint Services (managed by CDK).
+- Microservices consume APIs by creating interface VPC endpoints to connect to provider accounts' endpoint services.
+- Communication is private, secure, and fully managed by CDK stacks independent of Terraform base networking.
 
 ### Networking and private connectivity
 
-- Terraform provisions the VPC, IGW, NAT Gateways, subnets, route tables, and VPC Endpoint Services.
-- AWS CDK provisions ECS clusters, services, task definitions, and VPC endpoint interfaces for consuming other accounts' services.
-- Cross-account IAM roles, resource policies, and AWS Organizations SCPs govern permissions and security.
+- Terraform provisions the foundational network without dependency on microservices infrastructure.
+- CDK imports VPC and subnet constructs from Terraform outputs or parameter store but manages all service exposure and consumption resources.
+- Cross-account resource policies and IAM roles secure PrivateLink connections.
 
 ---
 
@@ -64,15 +73,15 @@ aws-infra-project/
 │   ├── variables.tf
 │   ├── outputs.tf
 │   └── provider.tf
-├── cdk-microservices/             # AWS CDK (TypeScript) ECS microservices per account
+├── cdk-microservices/             # AWS CDK (TypeScript) managing ECS services, NLBs, and VPC Endpoint Services
 │   ├── bin/
 │   │   └── app.ts                 # CDK app entry point
 │   ├── lib/
-│   │   └── microservices-stack.ts # ECS, NLB, VPC endpoints constructs
+│   │   └── microservices-stack.ts # ECS cluster, NLBs, provider & consumer VPC endpoint setup
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── README.md
-└── microservice/                  # Sample microservice source code (containerized)
+└── microservice/                  # Containerized microservice source code
     ├── Dockerfile
     ├── app/
     └── README.md
@@ -82,25 +91,25 @@ aws-infra-project/
 
 ## Prerequisites
 
-- Terraform 1.13+ (recommended use of [tfenv](https://github.com/tfutils/tfenv))
+- Terraform 1.13+ (recommend using [tfenv](https://github.com/tfutils/tfenv))
 - Node.js 22+ and npm
-- AWS CLI configured with valid profiles for all involved accounts
+- AWS CLI configured with appropriate profiles
 - AWS CDK CLI installed globally (`npm install -g aws-cdk`)
 
 ---
 
-## Folder Roles in AWS CDK (Lib vs Bin)
+## Folder Roles in AWS CDK
 
-- **bin/**: CDK application entry point, responsible for reading context/parameters and instantiating stacks.
-- **lib/**: Stack and reusable construct definitions representing infrastructure components.
+- **bin/**: CDK app entry point, bootstraps stacks by reading context and parameters.
+- **lib/**: Stacks and constructs defining all microservices infrastructure including ECS clusters, NLBs, and bidirectional VPC Endpoint Services.
 
 ---
 
 ## Deployment Workflow
 
-### Networking Account (Terraform)
+### Step 1 – Networking (Terraform, Networking Account)
 
-Deploy core networking:
+Deploy core network resources:
 
 ```bash
 cd terraform-base-infra
@@ -108,7 +117,7 @@ terraform init
 terraform apply -auto-approve
 ```
 
-Export outputs providing networking context for microservices accounts:
+Export key network outputs for CDK stacks:
 
 ```bash
 export VPC_ID=$(terraform output -raw vpc_id)
@@ -116,43 +125,43 @@ export PUBLIC_SUBNETS=$(terraform output -json public_subnet_ids)
 export PRIVATE_SUBNETS=$(terraform output -json private_subnet_ids)
 ```
 
-### Microservices Accounts (AWS CDK)
+### Step 2 – Microservices (AWS CDK, Microservices Accounts)
 
-Deploy microservices stacks in each account with:
+Deploy microservices stacks that handle both exposure (provider) and consumption (consumer):
 
 ```bash
 cd ../cdk-microservices
 npm install
 cdk deploy -c vpcId=$VPC_ID \
-  -c publicSubnetIds=$PUBLIC_SUBNETS \
-  -c privateSubnetIds=$PRIVATE_SUBNETS
+           -c publicSubnetIds=$PUBLIC_SUBNETS \
+           -c privateSubnetIds=$PRIVATE_SUBNETS
 ```
 
-Repeat per microservices account with respective credentials.
+Repeat deployment per microservice AWS account accordingly.
 
 ---
 
 ## Development Process
 
-- Modify and deploy foundational infra independently in Terraform.
-- Develop and deploy application stacks per account using AWS CDK.
-- Maintain clear versioning and stable interfaces for cross-account resource consumption.
+- Terraform base networking is modified and deployed independently without coupling to CDK microservices stacks.
+- AWS CDK manages full lifecycle of microservices NLBs and VPC Endpoint Services for bidirectional PrivateLink connectivity.
+- Stable Terraform outputs form the contract between accounts; CDK imports these network resources for service deployments.
 
 ---
 
 ## Why Hybrid Terraform + AWS CDK?
 
-- Terraform excels at managing centralized, long-lived infrastructure consistently.
-- AWS CDK enables rapid iteration and strongly typed infrastructure coding in TypeScript for application stacks.
-- Separation of concerns supports multiple teams and improves deployment safety.
+- **Terraform** provides consistent, stable base networking infrastructure shared across all accounts.
+- **AWS CDK** offers rich, typed programming constructs to independently model microservices infrastructure with complex bidirectional connectivity needs.
+- The clear boundary simplifies team responsibilities and deployment safety.
 
 ---
 
 ## Additional Resources
 
-- [AWS Multi-Account Strategy](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/)
-- [AWS VPC Endpoint Services (PrivateLink)](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints.html)
-- [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
+- [AWS Multi-Account Strategy Whitepaper](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/)
+- [AWS VPC Endpoint Services / PrivateLink Documentation](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints.html)
+- [Terraform AWS Provider Docs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
 - [AWS CDK Developer Guide](https://docs.aws.amazon.com/cdk/latest/guide/home.html)
 
 ---
