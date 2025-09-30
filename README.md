@@ -50,21 +50,11 @@ cd terraform-base-infra
 terraform init
 terraform apply -auto-approve
 ```
-Retrieve Terraform outputs for the CDK app:
-```bash
-export VPC_ID=$(terraform output -raw vpc_id)
-export PUBLIC_SUBNETS=$(terraform output -json public_subnet_ids)
-export PRIVATE_SUBNETS=$(terraform output -json private_subnet_ids)
-```
 
 ### 2. Deploy Microservices Infrastructure with AWS CDK TypeScript
 ```bash
 cd ../cdk-microservices
 npm install
-```
-Deploy the CDK stack passing Terraform outputs as context values:
-```bash
-cdk deploy -c vpcId=$VPC_ID -c publicSubnetIds=$PUBLIC_SUBNETS -c privateSubnetIds=$PRIVATE_SUBNETS
 ```
 
 ## Features
