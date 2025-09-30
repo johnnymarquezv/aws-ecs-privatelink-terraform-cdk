@@ -1,208 +1,181 @@
-# ECS Microservices with VPC Endpoints Using Terraform and AWS CDK (TypeScript)
+# ECS Microservices with PrivateLink using Terraform and AWS CDK (TypeScript)
 
-This project demonstrates a hybrid Infrastructure as Code (IaC) approach on AWS:
+A hybrid, multi-account AWS architecture demonstrating secure microservices deployment across isolated AWS accounts using infrastructure as code.
 
-- **Base Infrastructure** with Terraform (HCL) to provision stable foundational resources including a VPC, subnets, internet gateway, and NAT gateways.
-- **Microservices Infrastructure** with AWS CDK (TypeScript) to build ECS microservices, Network Load Balancers, and interface VPC endpoints for secure, private communication.
+## Architecture Overview
 
----
+This repository demonstrates a secure microservices setup across multiple AWS accounts:
+- **Terraform** builds and owns shared networking infrastructure in a centralized Networking Account
+- **AWS CDK (TypeScript)** builds and owns ECS microservices stacks in separate Application Accounts
+- **Cross-account private connectivity** is implemented with NLB-backed VPC Endpoint Services (AWS PrivateLink)
+
+## Key Components
+
+### Networking Account (Terraform)
+- Core VPC, subnets, route tables, IGW/NAT Gateway
+- VPC Endpoint Services fronted by Network Load Balancers (NLB)
+- Optional shared security services and centralized logging
+- Provides stable networking foundation for all application accounts
+
+### Application Accounts (AWS CDK)
+- ECS clusters, services, and task definitions
+- Each service fronted by an NLB and registered as a VPC Endpoint Service (when exposed cross-account)
+- Interface VPC Endpoints to consume other services privately
+- Independent deployment lifecycle per microservice
+
+## Network Flow
+
+```
+Client Microservice → Interface VPC Endpoint → PrivateLink → NLB → Target Microservice (ECS Tasks)
+```
+
+**Security Benefits:**
+- No public internet exposure
+- Traffic stays on AWS backbone
+- Cross-account isolation with least-privilege access
 
 ## Project Structure
 
+```
 aws-infra-project/
-├── terraform-base-infra/ # Terraform code for base networking and infra
-│ ├── main.tf
-│ ├── variables.tf
-│ ├── outputs.tf
-│ └── provider.tf
-├── cdk-microservices/ # AWS CDK in TypeScript for ECS microservices infra
-│ ├── bin/
-│ │ └── app.ts # CDK app entry point (bootstraps the app)
-│ ├── lib/
-│ │ └── microservices-stack.ts # CDK stack defining ECS, NLB, VPC endpoints
-│ ├── package.json # Declares CDK dependencies and devDependencies
-│ ├── tsconfig.json # TypeScript project config
-│ └── README.md # This file
-└── microservice/ # Sample microservice source code
-├── Dockerfile # Dockerfile for the containerized microservice
-├── src/
-│ └── ... # Application source code
-└── README.md # Microservice-specific docs
-
-text
-
----
+├── terraform-base-infra/          # Core VPC/networking (Networking Account)
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── provider.tf
+├── cdk-microservices/             # ECS services (Application Accounts)
+│   ├── bin/
+│   │   └── app.ts                 # CDK app entry point
+│   ├── lib/
+│   │   └── microservices-stack.ts # Stack definitions
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── README.md
+└── microservice/                  # Example service implementation
+    ├── Dockerfile
+    ├── requirements.txt
+    ├── app/
+    │   ├── main.py
+    │   └── routers/hello.py
+    └── README.md
+```
 
 ## Prerequisites
 
-- [Terraform](https://www.terraform.io/downloads) v1.13+ installed  
-  _Suggestion:_ Use [tfenv](https://github.com/tfutils/tfenv) for easy Terraform version management.
-- [Node.js](https://nodejs.org/en/download/) 22+ with NPM installed for AWS CDK development
-- [AWS CLI](https://aws.amazon.com/cli/) configured with appropriate permissions
-- [AWS CDK](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html) CLI installed (`npm install -g aws-cdk`)
+- **Terraform** 1.13+ (recommend using [tfenv](https://github.com/tfutils/tfenv) for version management)
+- **Node.js** 22+ and npm
+- **AWS CLI** configured for each target account
+- **AWS CDK CLI** installed globally: `npm install -g aws-cdk`
 
----
+## CDK Folder Structure
 
-## CDK Folder Structure Explanation: `lib` vs `bin`
+### `bin/` Directory
+- Entry point of the CDK application (e.g., `app.ts`)
+- Creates the CDK App instance
+- Reads context parameters and environment variables
+- Instantiates stack classes
 
-- **`bin/` folder:** Contains the application entry point file (e.g. `app.ts`). This file boots up the CDK app, instantiates stacks, and triggers deployment/synthesis.
-- **`lib/` folder:** Contains the infrastructure code—stack definitions and reusable constructs that define AWS resources and services used by your app.
+### `lib/` Directory
+- Contains stack and construct definitions
+- The actual infrastructure modeled as code
+- Reusable components and patterns
 
-This separation helps keep deployment orchestration (`bin`) distinct from infrastructure modeling (`lib`).
+This separation keeps orchestration logic distinct from infrastructure definitions.
 
----
+## Deployment Workflow
 
-## Deployment Steps
+### Step 1: Deploy Networking Infrastructure (Terraform)
 
-### 1. Deploy Base Infrastructure with Terraform
-
+```bash
 cd terraform-base-infra
 terraform init
 terraform apply -auto-approve
+```
 
-text
+**Capture outputs for use in microservices deployment:**
 
-Retrieve Terraform outputs for the CDK app:
-
+```bash
 export VPC_ID=$(terraform output -raw vpc_id)
 export PUBLIC_SUBNETS=$(terraform output -json public_subnet_ids)
 export PRIVATE_SUBNETS=$(terraform output -json private_subnet_ids)
+export SERVICE1_ENDPOINT_SERVICE_NAME=$(terraform output -raw service1_endpoint_service_name)
+```
 
-text
+### Step 2: Deploy Microservices (AWS CDK)
 
-### 2. Deploy Microservices Infrastructure with AWS CDK TypeScript
-
+```bash
 cd ../cdk-microservices
 npm install
 
-text
+# Bootstrap CDK (once per account/region)
+cdk bootstrap aws://<account-id>/<region>
 
-Deploy the CDK stack passing Terraform outputs as context values:
+# Deploy with context variables
+cdk deploy \
+  -c vpcId=$VPC_ID \
+  -c publicSubnetIds=$PUBLIC_SUBNETS \
+  -c privateSubnetIds=$PRIVATE_SUBNETS
+```
 
-cdk deploy -c vpcId=$VPC_ID -c publicSubnetIds=$PUBLIC_SUBNETS -c privateSubnetIds=$PRIVATE_SUBNETS
+**Important Notes:**
+- Pass cross-account endpoint service names via context or environment variables
+- Configure resource policies on VPC Endpoint Services to allow consumer accounts
+- Consider using SSM Parameter Store or Secrets Manager for sharing configuration
 
-text
+## Security and Governance
 
----
+- **Cross-account IAM roles** with least-privilege policies
+- **Resource policies** on VPC Endpoint Services for explicit allowlisting
+- **AWS Organizations and SCPs** for organizational guardrails
+- **Centralized logging** options (CloudWatch, OpenSearch, third-party solutions)
 
-## Features
+## Development Workflow
 
-- Modular base AWS network infrastructure provisioned with Terraform.
-- ECS Fargate cluster and services deployed using AWS CDK in TypeScript.
-- Network Load Balancer (NLB) with listeners and target groups configured.
-- Interface VPC Endpoints (AWS PrivateLink) for ECS APIs (`ecs-agent`, `ecs-telemetry`, `ecs`).
-- Security best practices including private subnets and no public IPs on ECS tasks.
-- Clear separation of responsibilities between foundational infrastructure and application microservices.
+### Terraform (Networking Account)
+- Modify VPC/network modules as infrastructure evolves
+- Maintain stable outputs to avoid breaking consumer stacks
+- Use versioned modules for repeatability
 
----
+### CDK (Application Accounts)
+- Add new services as stacks or constructs under `lib/`
+- Reuse common patterns for task definitions, logging, security groups
+- Leverage TypeScript for type safety and IDE support
 
-## Multi-Account Architecture with Microservices, NLB, and VPC Endpoint Services
+### Local Service Development
 
-### Overview
+Example using Python/FastAPI:
 
-For organizations scaling their AWS environment, a **multi-account strategy** is a best practice to enhance security, governance, operational scalability, and cost management. This project can be extended to support such multi-account environments where different AWS accounts serve specific roles, including:
+```bash
+cd microservice
+docker build -t ecs-python-microservice .
+docker run -p 8000:8000 ecs-python-microservice
+```
 
-- **Networking Account:** Central VPC, shared services, and inter-account connectivity.
-- **Microservices Accounts:** Dedicated accounts hosting microservices deployed on ECS.
-- **Security and Compliance Accounts:** Managing centralized logging, auditing, and security tooling.
+## Why Hybrid Terraform + CDK?
 
----
+### Terraform Advantages
+- Excellent for long-lived, shared infrastructure
+- Mature state management and workflow
+- Strong provider ecosystem
 
-### Architecture
+### AWS CDK Advantages
+- Fast iteration on application stacks
+- TypeScript provides strong typing and IDE support
+- Reusable constructs and patterns
+- Native AWS service integration
 
-In a multi-account setup supporting ECS microservices interconnected securely:
-
-1. **Core VPC and Networking Infrastructure**
-    - Deployed in a dedicated **Networking Account**.
-    - Hosts the central VPC with subnets, routing, NAT gateways.
-    - Exposes **VPC Endpoint Services** representing microservices via **Network Load Balancers (NLB)**.
-
-2. **Microservices in Separate Accounts**
-    - Each microservice or group of related services deployed in its own AWS account (Microservices Account).
-    - Microservices expose their APIs through **NLBs**, registered as **VPC Endpoint Services** in the Networking Account.
-    - Communication between accounts uses **interface VPC endpoints** to privately consume these VPC endpoint services.
-    - This ensures all microservice communication remains on the AWS private network, avoiding public internet exposure.
-
-3. **Cross-Account Role and Permissions**
-    - Proper IAM roles and policies established to allow cross-account VPC endpoint service creation and consumption.
-    - Use of AWS Organizations and Service Control Policies (SCPs) for governance.
-
----
-
-### Benefits
-
-- **Isolation and Security:** Specific workload and network boundary per account improves security posture and compliance.
-- **Cost Allocation and Tracking:** Costs naturally segregate per account, aiding billing transparency.
-- **Operational Scalability:** Independent teams can manage their microservices accounts autonomously.
-- **Network Efficiency:** Traffic routed privately over AWS backbone via VPC endpoints and NLBs.
-
----
-
-### Implementation Considerations
-
-- **Terraform and AWS CDK Deployment**  
-  Use Terraform to provision shared networking resources including the VPC and VPC Endpoint Services in the Networking Account.  
-  Use AWS CDK to deploy ECS clusters and services in Microservices Accounts, importing necessary VPC endpoint ARNs or DNS entries as environment variables or deployment parameters.
-
-- **Resource Sharing & Discovery**  
-  Use AWS Resource Access Manager (RAM) or DNS-based service discovery to publish microservices across accounts.
-
-- **Security & Compliance**  
-  Enforce least privilege IAM roles and leverage AWS Control Tower or AWS Organizations to enforce guardrails across accounts.
-
----
-
-### References for Further Reading
-
-- [Organizing Your AWS Environment Using Multiple Accounts (AWS Whitepaper)](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/organizing-your-aws-environment.html)
-- [AWS Multi-Account Strategy and Landing Zone](https://dzone.com/articles/aws-multi-account-strategy-and-landing-zone)
-- [Managing Cross-Account Serverless Microservices (AWS Blog)](https://aws.amazon.com/blogs/compute/managing-cross-account-serverless-microservices/)
-- [Using VPC Endpoint Services to Privately Expose Applications Across AWS Accounts](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints.html)
-
----
-
-## Why Hybrid Terraform + AWS CDK?
-
-- Terraform is ideal for managing stable, foundational infrastructure with strong state management.
-- AWS CDK enables rich object-oriented infrastructure modeling in TypeScript, allowing rapid iteration on application stacks.
-- Combining both tools supports effective team workflows: DevOps focuses on Terraform base; developers manage microservices with AWS CDK.
-
----
-
-## Project Development
-
-### Updating Terraform Infrastructure
-
-Make changes in the `terraform-base-infra` folder, then run:
-
-terraform plan
-terraform apply
-
-text
-
-### Updating CDK Infrastructure
-
-Modify code in `cdk-microservices/lib`, then run:
-
-npm run build
-cdk deploy
-
-text
-
----
+### Combined Benefits
+- Independent pipelines reduce blast radius
+- Team autonomy with separated state domains
+- Right tool for the right job
 
 ## Additional Resources
 
+- [AWS Multi-Account Best Practices](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/organizing-your-aws-environment.html)
+- [AWS VPC Interface Endpoints / PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints.html)
 - [Terraform AWS Provider Documentation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
-- [tfenv Terraform Version Manager](https://github.com/tfutils/tfenv)
 - [AWS CDK Developer Guide](https://docs.aws.amazon.com/cdk/latest/guide/home.html)
-- [Amazon ECS Developer Guide](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/Welcome.html)
-- [AWS VPC Interface Endpoints](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-endpoints.html)
-
----
 
 ## License
 
-This project is open source under the MIT License.
-
----
+MIT
