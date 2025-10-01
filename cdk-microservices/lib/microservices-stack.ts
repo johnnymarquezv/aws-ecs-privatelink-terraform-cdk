@@ -13,6 +13,12 @@ export interface MicroservicesStackProps extends cdk.StackProps {
   microserviceName: string;
   microservicePort: number;
   microserviceImage: string;
+  // Terraform-managed resources
+  baseDefaultSecurityGroupId: string;
+  basePrivateSecurityGroupId: string;
+  ecsTaskExecutionRoleArn: string;
+  ecsTaskRoleArn: string;
+  ecsApplicationLogGroupName: string;
   consumerEndpointServices?: Array<{
     serviceName: string;
     vpcEndpointServiceId: string;
@@ -25,7 +31,6 @@ export class MicroservicesStack extends cdk.Stack {
   public readonly cluster: ecs.Cluster;
   public readonly nlb: elbv2.NetworkLoadBalancer;
   public readonly vpcEndpointService: ec2.VpcEndpointService;
-  public readonly consumerEndpoints: ec2.VpcEndpoint[] = [];
 
   constructor(scope: Construct, id: string, props: MicroservicesStackProps) {
     super(scope, id, props);
@@ -42,17 +47,20 @@ export class MicroservicesStack extends cdk.Stack {
       containerInsights: true,
     });
 
-    // Create CloudWatch Log Group
-    const logGroup = new logs.LogGroup(this, 'MicroserviceLogGroup', {
-      logGroupName: `/ecs/${props.microserviceName}`,
-      retention: logs.RetentionDays.ONE_WEEK,
-    });
+    // Import CloudWatch Log Group from Terraform
+    const logGroup = logs.LogGroup.fromLogGroupName(this, 'ImportedLogGroup', props.ecsApplicationLogGroupName);
+
+    // Import IAM roles from Terraform
+    const taskExecutionRole = iam.Role.fromRoleArn(this, 'ImportedTaskExecutionRole', props.ecsTaskExecutionRoleArn);
+    const taskRole = iam.Role.fromRoleArn(this, 'ImportedTaskRole', props.ecsTaskRoleArn);
 
     // Create Task Definition
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'MicroserviceTaskDef', {
       family: props.microserviceName,
       cpu: 256,
       memoryLimitMiB: 512,
+      executionRole: taskExecutionRole,
+      taskRole: taskRole,
     });
 
     // Add container to task definition
@@ -72,17 +80,38 @@ export class MicroservicesStack extends cdk.Stack {
       protocol: ecs.Protocol.TCP,
     });
 
-    // Create Security Group for ECS Service
+    // Import base security groups from Terraform
+    const baseDefaultSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(
+      this, 
+      'ImportedBaseDefaultSecurityGroup', 
+      props.baseDefaultSecurityGroupId
+    );
+    
+    const basePrivateSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(
+      this, 
+      'ImportedBasePrivateSecurityGroup', 
+      props.basePrivateSecurityGroupId
+    );
+
+    // Create application-specific security group that extends base security groups
     const ecsSecurityGroup = new ec2.SecurityGroup(this, 'EcsSecurityGroup', {
       vpc: this.vpc,
-      description: `Security group for ${props.microserviceName} ECS service`,
+      description: `Application-specific security group for ${props.microserviceName} ECS service`,
       allowAllOutbound: true,
     });
 
+    // Add specific rules for this microservice
     ecsSecurityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
       ec2.Port.tcp(props.microservicePort),
       'Allow inbound traffic on microservice port'
+    );
+
+    // Allow communication with base security groups
+    ecsSecurityGroup.addIngressRule(
+      ec2.Peer.securityGroupId(basePrivateSecurityGroup.securityGroupId),
+      ec2.Port.tcp(props.microservicePort),
+      'Allow traffic from base private security group'
     );
 
     // Create ECS Service
@@ -143,32 +172,7 @@ export class MicroservicesStack extends cdk.Stack {
       ],
     });
 
-    // Create interface VPC endpoints for consuming other microservices (Consumer)
-    if (props.consumerEndpointServices) {
-      props.consumerEndpointServices.forEach((endpointService, index) => {
-        const consumerEndpoint = new ec2.VpcEndpoint(this, `ConsumerEndpoint${index}`, {
-          vpc: this.vpc,
-          service: ec2.VpcEndpointService.fromVpcEndpointServiceId(
-            this,
-            `ConsumerEndpointService${index}`,
-            endpointService.vpcEndpointServiceId
-          ),
-          vpcEndpoints: [ec2.VpcEndpointType.INTERFACE],
-          subnets: {
-            subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-          },
-          securityGroups: [
-            new ec2.SecurityGroup(this, `ConsumerEndpointSecurityGroup${index}`, {
-              vpc: this.vpc,
-              description: `Security group for consumer endpoint ${endpointService.serviceName}`,
-              allowAllOutbound: true,
-            }),
-          ],
-        });
-
-        this.consumerEndpoints.push(consumerEndpoint);
-      });
-    }
+    // Note: Consumer VPC endpoints are now managed by the separate ConnectivityStack
 
     // Outputs
     new cdk.CfnOutput(this, 'VpcEndpointServiceId', {

@@ -68,11 +68,17 @@ deploy_terraform() {
     export VPC_ID=$(terraform output -raw vpc_id)
     export PUBLIC_SUBNETS=$(terraform output -json public_subnet_ids)
     export PRIVATE_SUBNETS=$(terraform output -json private_subnet_ids)
+    export BASE_DEFAULT_SECURITY_GROUP_ID=$(terraform output -raw base_default_security_group_id)
+    export BASE_PRIVATE_SECURITY_GROUP_ID=$(terraform output -raw base_private_security_group_id)
+    export ECS_TASK_EXECUTION_ROLE_ARN=$(terraform output -raw ecs_task_execution_role_arn)
+    export ECS_TASK_ROLE_ARN=$(terraform output -raw ecs_task_role_arn)
+    export ECS_APPLICATION_LOG_GROUP_NAME=$(terraform output -raw ecs_application_log_group_name)
     
     print_status "Terraform deployment completed ✓"
     print_status "VPC ID: $VPC_ID"
     print_status "Public Subnets: $PUBLIC_SUBNETS"
     print_status "Private Subnets: $PRIVATE_SUBNETS"
+    print_status "Base Security Groups and IAM roles exported ✓"
     
     cd ..
 }
@@ -90,6 +96,11 @@ deploy_cdk() {
     cdk deploy -c vpcId=$VPC_ID \
                -c publicSubnetIds="$PUBLIC_SUBNETS" \
                -c privateSubnetIds="$PRIVATE_SUBNETS" \
+               -c baseDefaultSecurityGroupId="$BASE_DEFAULT_SECURITY_GROUP_ID" \
+               -c basePrivateSecurityGroupId="$BASE_PRIVATE_SECURITY_GROUP_ID" \
+               -c ecsTaskExecutionRoleArn="$ECS_TASK_EXECUTION_ROLE_ARN" \
+               -c ecsTaskRoleArn="$ECS_TASK_ROLE_ARN" \
+               -c ecsApplicationLogGroupName="$ECS_APPLICATION_LOG_GROUP_NAME" \
                -c microserviceName="microservice" \
                -c microservicePort="80" \
                -c microserviceImage="nginx:alpine"

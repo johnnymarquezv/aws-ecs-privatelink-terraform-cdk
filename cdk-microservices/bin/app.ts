@@ -2,6 +2,7 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { MicroservicesStack } from '../lib/microservices-stack';
+import { ConnectivityStack } from '../lib/connectivity-stack';
 
 const app = new cdk.App();
 
@@ -13,6 +14,13 @@ const publicSubnetIds = JSON.parse(
 const privateSubnetIds = JSON.parse(
   app.node.tryGetContext('privateSubnetIds') || process.env.PRIVATE_SUBNETS || '[]'
 );
+
+// Terraform-managed resources
+const baseDefaultSecurityGroupId = app.node.tryGetContext('baseDefaultSecurityGroupId') || process.env.BASE_DEFAULT_SECURITY_GROUP_ID;
+const basePrivateSecurityGroupId = app.node.tryGetContext('basePrivateSecurityGroupId') || process.env.BASE_PRIVATE_SECURITY_GROUP_ID;
+const ecsTaskExecutionRoleArn = app.node.tryGetContext('ecsTaskExecutionRoleArn') || process.env.ECS_TASK_EXECUTION_ROLE_ARN;
+const ecsTaskRoleArn = app.node.tryGetContext('ecsTaskRoleArn') || process.env.ECS_TASK_ROLE_ARN;
+const ecsApplicationLogGroupName = app.node.tryGetContext('ecsApplicationLogGroupName') || process.env.ECS_APPLICATION_LOG_GROUP_NAME;
 
 // Microservice configuration
 const microserviceName = app.node.tryGetContext('microserviceName') || 'microservice';
@@ -35,6 +43,27 @@ if (privateSubnetIds.length === 0) {
   throw new Error('privateSubnetIds context is required. Use -c privateSubnetIds=<json-array> or set PRIVATE_SUBNETS environment variable.');
 }
 
+// Validate Terraform-managed resources
+if (!baseDefaultSecurityGroupId) {
+  throw new Error('baseDefaultSecurityGroupId context is required. Use -c baseDefaultSecurityGroupId=<sg-id> or set BASE_DEFAULT_SECURITY_GROUP_ID environment variable.');
+}
+
+if (!basePrivateSecurityGroupId) {
+  throw new Error('basePrivateSecurityGroupId context is required. Use -c basePrivateSecurityGroupId=<sg-id> or set BASE_PRIVATE_SECURITY_GROUP_ID environment variable.');
+}
+
+if (!ecsTaskExecutionRoleArn) {
+  throw new Error('ecsTaskExecutionRoleArn context is required. Use -c ecsTaskExecutionRoleArn=<role-arn> or set ECS_TASK_EXECUTION_ROLE_ARN environment variable.');
+}
+
+if (!ecsTaskRoleArn) {
+  throw new Error('ecsTaskRoleArn context is required. Use -c ecsTaskRoleArn=<role-arn> or set ECS_TASK_ROLE_ARN environment variable.');
+}
+
+if (!ecsApplicationLogGroupName) {
+  throw new Error('ecsApplicationLogGroupName context is required. Use -c ecsApplicationLogGroupName=<log-group-name> or set ECS_APPLICATION_LOG_GROUP_NAME environment variable.');
+}
+
 // Create the microservices stack
 new MicroservicesStack(app, `${microserviceName}-stack`, {
   env: {
@@ -47,7 +76,11 @@ new MicroservicesStack(app, `${microserviceName}-stack`, {
   microserviceName,
   microservicePort,
   microserviceImage,
-  consumerEndpointServices,
+  baseDefaultSecurityGroupId,
+  basePrivateSecurityGroupId,
+  ecsTaskExecutionRoleArn,
+  ecsTaskRoleArn,
+  ecsApplicationLogGroupName,
   description: `Microservices stack for ${microserviceName} with ECS, NLB, and VPC Endpoint Services`,
   tags: {
     Project: 'Multi-Account-Microservices',
@@ -55,6 +88,26 @@ new MicroservicesStack(app, `${microserviceName}-stack`, {
     Environment: 'production',
   },
 });
+
+// Create the connectivity stack for cross-account VPC endpoints
+if (consumerEndpointServices.length > 0) {
+  new ConnectivityStack(app, `${microserviceName}-connectivity-stack`, {
+    env: {
+      account: process.env.CDK_DEFAULT_ACCOUNT,
+      region: process.env.CDK_DEFAULT_REGION,
+    },
+    vpcId,
+    privateSubnetIds,
+    basePrivateSecurityGroupId,
+    consumerEndpointServices,
+    description: `Connectivity stack for ${microserviceName} with cross-account VPC endpoints`,
+    tags: {
+      Project: 'Multi-Account-Microservices',
+      Service: microserviceName,
+      Environment: 'production',
+    },
+  });
+}
 
 // Add CDK metadata
 cdk.Tags.of(app).add('Project', 'Multi-Account-Microservices');
