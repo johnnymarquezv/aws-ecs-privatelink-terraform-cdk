@@ -181,12 +181,56 @@ Repeat deployment per microservice AWS account accordingly.
 
 ## Why Hybrid Terraform + AWS CDK?
 
-- **Terraform** provides consistent, stable base networking infrastructure and governance resources shared across all accounts
-- **AWS CDK** offers rich, typed programming constructs to independently model microservices infrastructure with complex bidirectional connectivity needs
-- **Enhanced separation** improves security governance by centralizing base security groups, IAM roles, and log management
-- **Clear boundaries** simplify team responsibilities: networking team owns foundational infrastructure, application teams own microservice-specific resources
-- **Operational consistency** through centralized log retention, security policies, and monitoring
-- **Deployment safety** through independent lifecycles and clear resource ownership
+### Resource Separation Analysis
+
+#### **Stable vs Dynamic Resources**
+- **Terraform (Stable Resources)**: VPC, subnets, base security groups, shared VPC endpoints, base IAM roles, centralized log groups
+  - Change infrequently and require careful governance
+  - Shared across multiple accounts and services
+  - Require centralized management for consistency and security
+- **CDK (Dynamic Resources)**: ECS services, application load balancers, microservice-specific security rules, VPC endpoint services
+  - Change frequently with application deployments
+  - Service-specific and independently managed
+  - Require flexibility and type safety for complex patterns
+
+#### **Tool Strengths Alignment**
+- **Terraform Strengths**:
+  - Mature, stable tool for networking infrastructure
+  - Excellent state management for shared resources
+  - Strong ecosystem and provider support
+  - Team familiarity in enterprise environments
+  - Better for governance and compliance requirements
+
+- **CDK Strengths**:
+  - Type safety and compile-time error checking
+  - Rich, high-level constructs for complex patterns
+  - Excellent developer experience with IDE support
+  - Flexible modeling of application-specific infrastructure
+  - Better for dynamic, frequently changing resources
+
+#### **Enhanced Architecture Benefits**
+- **Security Governance**: Centralized management of base security groups, IAM roles, and policies
+- **Operational Consistency**: Centralized log retention, security policies, and monitoring
+- **Clear Boundaries**: Networking team owns foundational infrastructure, application teams own microservice-specific resources
+- **Deployment Safety**: Independent lifecycles and clear resource ownership
+- **Cost Optimization**: Shared VPC endpoints reduce data transfer costs
+- **Compliance**: Easier to audit and enforce security standards across accounts
+
+### **Key Architectural Decisions**
+
+#### **Resource Placement Criteria**
+1. **Stability**: Stable resources (VPC, base security groups) → Terraform
+2. **Governance**: Security-critical resources (IAM roles, base policies) → Terraform  
+3. **Frequency**: Frequently changing resources (ECS services, app configs) → CDK
+4. **Ownership**: Shared resources → Terraform, service-specific → CDK
+5. **Tool Strengths**: Networking/state management → Terraform, complex patterns → CDK
+
+#### **Separation Benefits**
+- **Clear Ownership**: No resource conflicts or ownership confusion
+- **Independent Lifecycles**: Changes to one tool don't affect the other
+- **Tool Optimization**: Each tool handles what it does best
+- **Team Efficiency**: Clear responsibilities and boundaries
+- **Operational Excellence**: Centralized governance with distributed execution
 
 ---
 

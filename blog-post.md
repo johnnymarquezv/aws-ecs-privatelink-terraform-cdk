@@ -168,22 +168,86 @@ The architecture enables bidirectional communication through:
 
 ## Why Hybrid Terraform + CDK?
 
-### Terraform Advantages
-- **Stability**: Mature tool for networking infrastructure
+### Resource Separation Analysis
+
+#### **Stable vs Dynamic Resources**
+
+**Terraform (Stable Resources)** - Change infrequently, require governance:
+- **Core Networking**: VPC, subnets, gateways, routing tables
+- **Base Security Groups**: Centralized security policies and governance
+- **Shared VPC Endpoints**: Common AWS services (S3, DynamoDB, ECR, CloudWatch)
+- **Base IAM Roles**: Security compliance and access management
+- **Centralized Logging**: Consistent retention policies and monitoring
+- **Network Monitoring**: VPC Flow Logs and security analysis
+
+**CDK (Dynamic Resources)** - Change frequently, service-specific:
+- **ECS Infrastructure**: Clusters, services, task definitions
+- **Application Load Balancers**: Service-specific traffic distribution
+- **Microservice Security Rules**: Application-specific ingress/egress
+- **VPC Endpoint Services**: Service exposure and consumption
+- **Application Configuration**: Service-specific settings and environment
+
+#### **Tool Strengths Alignment**
+
+**Terraform Strengths**:
+- **Mature & Stable**: Battle-tested for networking infrastructure
 - **State Management**: Excellent for shared, long-lived resources
 - **Provider Ecosystem**: Comprehensive AWS resource coverage
 - **Team Familiarity**: Widely adopted in enterprise environments
+- **Governance**: Better for compliance and security requirements
+- **Consistency**: Reliable for foundational infrastructure
 
-### CDK Advantages
+**CDK Strengths**:
 - **Type Safety**: Compile-time error checking with TypeScript
 - **Rich Constructs**: High-level abstractions for complex patterns
 - **Flexibility**: Easy to model dynamic, application-specific infrastructure
 - **Developer Experience**: Familiar programming language and IDE support
+- **Rapid Development**: Faster iteration for application infrastructure
+- **Complex Patterns**: Better for sophisticated service architectures
 
-### Clear Separation of Concerns
-- **Terraform**: Manages shared, stable networking foundation
-- **CDK**: Handles dynamic, application-specific microservice infrastructure
-- **Independent Lifecycles**: Changes to one don't affect the other
+#### **Enhanced Architecture Benefits**
+
+**Security Governance**:
+- Centralized management of base security groups and IAM policies
+- Consistent security standards across all microservices
+- Easier compliance auditing and policy enforcement
+
+**Operational Consistency**:
+- Centralized log retention and monitoring policies
+- Consistent network monitoring and security analysis
+- Standardized operational procedures
+
+**Clear Separation of Concerns**:
+- **Terraform**: Shared, stable networking foundation + governance
+- **CDK Microservices**: Service provision and application infrastructure
+- **CDK Connectivity**: Service consumption and cross-account communication
+
+**Deployment Safety**:
+- Independent lifecycles prevent cascading failures
+- Clear resource ownership eliminates conflicts
+- Rollback strategies for each component
+
+### **Decision-Making Process**
+
+The resource separation was carefully analyzed based on several key criteria:
+
+#### **1. Change Frequency Analysis**
+- **High Frequency (CDK)**: ECS services, load balancers, application configs
+- **Low Frequency (Terraform)**: VPC structure, base security policies, shared endpoints
+
+#### **2. Ownership and Governance**
+- **Centralized (Terraform)**: Resources requiring security governance and compliance
+- **Distributed (CDK)**: Resources owned by individual application teams
+
+#### **3. Tool Capability Assessment**
+- **Terraform**: Excels at stable, shared infrastructure with strong state management
+- **CDK**: Excels at complex, dynamic patterns with type safety and developer experience
+
+#### **4. Operational Impact**
+- **Terraform**: Changes affect multiple accounts, require careful planning
+- **CDK**: Changes are service-specific, can be deployed independently
+
+This analysis led to the enhanced architecture that moves governance-critical resources to Terraform while maintaining application-specific resources in CDK, creating a more maintainable and secure system.
 
 ## Deployment Workflow
 
