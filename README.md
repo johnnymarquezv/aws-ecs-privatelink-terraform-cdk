@@ -32,6 +32,7 @@ This project implements a secure, scalable multi-account AWS architecture enabli
     - Each microservice exposes its API by provisioning **Network Load Balancers (NLBs)**.
     - CDK manages **VPC Endpoint Services** to expose these NLBs, acting as provider endpoints.
     - CDK also provisions interface VPC endpoints to consume **other microservices' VPC Endpoint Services**, enabling private, bidirectional communication between microservices across accounts.
+    - **For this example**: CDK deploys a publicly available microservice (nginx) suitable for testing VPC endpoint connectivity.
 
 This split keeps Terraform and AWS CDK **independent**, with Terraform managing shared networking, and CDK fully responsible for application exposure and inter-service connectivity.
 
@@ -81,10 +82,10 @@ aws-infra-project/
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── README.md
-└── microservice/                  # Containerized microservice source code
+└── microservice/                  # Local microservice for testing VPC endpoint connectivity
     ├── Dockerfile
-    ├── app/
-    └── README.md
+    ├── app/                       # FastAPI application with health endpoints
+    └── README.md                  # Local deployment and testing instructions
 ```
 
 ---
@@ -146,6 +147,8 @@ Repeat deployment per microservice AWS account accordingly.
 - Terraform base networking is modified and deployed independently without coupling to CDK microservices stacks.
 - AWS CDK manages full lifecycle of microservices NLBs and VPC Endpoint Services for bidirectional PrivateLink connectivity.
 - Stable Terraform outputs form the contract between accounts; CDK imports these network resources for service deployments.
+- **Local microservice** (in `microservice/` directory) can be deployed locally for testing VPC endpoint connectivity.
+- **CDK-deployed microservice** uses a publicly available image (nginx) suitable for testing both VPC endpoint services and VPC endpoints.
 
 ---
 

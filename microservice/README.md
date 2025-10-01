@@ -1,6 +1,8 @@
-# Python FastAPI ECS Microservice
+# Local Microservice for VPC Endpoint Testing
 
-This microservice is a simple web API implemented with FastAPI, containerized for deployment to AWS ECS Fargate. It serves as an example service in a microservices architecture interconnected with AWS PrivateLink using Terraform and AWS CDK.
+This microservice is a simple web API implemented with FastAPI, designed for **local deployment and testing** of VPC endpoint connectivity. It serves as a test client to verify PrivateLink connections to CDK-deployed microservices.
+
+**Note**: This microservice is deployed locally for testing purposes. The CDK stack deploys a separate, publicly available microservice (nginx) for infrastructure testing.
 
 ---
 
@@ -54,11 +56,22 @@ Visit [http://localhost:8000](http://localhost:8000) to test the service.
 - `GET /hello`  
   Returns a simple greeting message from the microservice.
 
+- `GET /health`  
+  **Health check endpoint** for load balancer health checks and connectivity testing.
+
 Example:
 
 ```json
 {
   "message": "Hello from ECS Python microservice!"
+}
+```
+
+Health check response:
+```json
+{
+  "status": "healthy",
+  "service": "microservice"
 }
 ```
 
@@ -90,11 +103,44 @@ pytest
 
 ---
 
+## Testing VPC Endpoint Connectivity
+
+This local microservice can be used to test connectivity to CDK-deployed microservices via VPC endpoints:
+
+### 1. Deploy CDK Stack First
+Ensure the CDK stack is deployed and note the VPC Endpoint Service DNS name.
+
+### 2. Run Local Microservice
+```bash
+# Start the local microservice
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 3. Test Connectivity
+From within the VPC (using an EC2 instance or VPN connection), test connectivity to the CDK-deployed microservice:
+
+```bash
+# Test health endpoint
+curl http://<vpc-endpoint-dns-name>/health
+
+# Test basic connectivity
+curl http://<vpc-endpoint-dns-name>/
+
+# Test from local microservice (if running in same VPC)
+curl http://<vpc-endpoint-dns-name>/hello
+```
+
+### 4. Verify PrivateLink Connection
+- Ensure traffic flows through VPC endpoints (not internet)
+- Check CloudWatch logs for connection attempts
+- Verify security group rules allow the traffic
+
 ## Notes
 
-- This microservice is designed to be simple and extensible. Additional routes, dependencies, and features can be added under the `app/` directory.
-- The service listens on port 8000 by default; make sure to expose this port in the ECS task definition.
+- This microservice is designed for **local testing** of VPC endpoint connectivity.
+- The service listens on port 8000 by default.
 - The Dockerfile uses `python:3.11-alpine` base image for a small image footprint.
+- For production ECS deployment, use the CDK stack which deploys nginx for infrastructure testing.
 
 ---
 
