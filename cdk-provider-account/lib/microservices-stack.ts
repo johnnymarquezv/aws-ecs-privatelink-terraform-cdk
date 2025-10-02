@@ -70,7 +70,13 @@ export class MicroservicesStack extends cdk.Stack {
         logGroup: logGroup,
       }),
       environment: {
-        PORT: props.microservicePort.toString(),
+        SERVICE_NAME: props.microserviceName,
+        SERVICE_PORT: props.microservicePort.toString(),
+        SERVICE_VERSION: '1.0.0',
+        LOG_LEVEL: 'INFO',
+        ENABLE_METRICS: 'true',
+        RATE_LIMIT: '100',
+        CONSUMER_SERVICES: JSON.stringify(props.consumerEndpointServices || []),
       },
     });
 
@@ -173,21 +179,20 @@ export class MicroservicesStack extends cdk.Stack {
       allowedPrincipals: allowedPrincipals,
     });
 
-    // Provider-specific outputs and configuration
-
-    // Outputs
+    // Output VPC Endpoint Service information for cross-account sharing
     new cdk.CfnOutput(this, 'VpcEndpointServiceId', {
       value: this.vpcEndpointService.vpcEndpointServiceId,
-      description: 'VPC Endpoint Service ID for this microservice',
+      description: 'VPC Endpoint Service ID for cross-account sharing',
       exportName: `${props.microserviceName}-vpc-endpoint-service-id`,
     });
 
-    new cdk.CfnOutput(this, 'VpcEndpointServiceName', {
-      value: this.vpcEndpointService.vpcEndpointServiceName,
-      description: 'VPC Endpoint Service Name for this microservice',
-      exportName: `${props.microserviceName}-vpc-endpoint-service-name`,
+    new cdk.CfnOutput(this, 'VpcEndpointServiceDnsName', {
+      value: this.vpcEndpointService.vpcEndpointDnsEntries[0].dnsName,
+      description: 'VPC Endpoint Service DNS name for cross-account access',
+      exportName: `${props.microserviceName}-vpc-endpoint-service-dns`,
     });
 
+    // Additional outputs
     new cdk.CfnOutput(this, 'NetworkLoadBalancerArn', {
       value: this.nlb.loadBalancerArn,
       description: 'Network Load Balancer ARN for this microservice',

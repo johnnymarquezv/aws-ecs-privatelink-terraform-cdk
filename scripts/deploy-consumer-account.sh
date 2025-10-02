@@ -35,7 +35,7 @@ REGION=${2:-us-east-1}
 ACCOUNT_ID=${3:-""}
 SERVICE_NAME=${4:-"consumer"}
 SERVICE_PORT=${5:-80}
-SERVICE_IMAGE=${6:-"nginx:alpine"}
+SERVICE_IMAGE=${6:-"ghcr.io/your-org/microservice:latest"}
 PROVIDER_SERVICES=${7:-""}
 
 print_header "CDK Consumer Account Deployment"

@@ -69,11 +69,18 @@ export class ConnectivityStack extends cdk.Stack {
         logGroup: logGroup,
       }),
       environment: {
-        PORT: props.microservicePort.toString(),
+        SERVICE_NAME: `${props.microserviceName}-consumer`,
+        SERVICE_PORT: props.microservicePort.toString(),
+        SERVICE_VERSION: '1.0.0',
+        LOG_LEVEL: 'INFO',
+        ENABLE_METRICS: 'true',
+        RATE_LIMIT: '100',
         // Add environment variables for service discovery
         CONSUMER_SERVICES: JSON.stringify(props.consumerEndpointServices.map(s => ({
           name: s.serviceName,
-          port: s.port
+          endpoint: `vpce-${s.vpcEndpointServiceId.split('-').pop()}-${s.vpcEndpointServiceId.split('-')[1]}.vpce-svc-${s.vpcEndpointServiceId}.us-east-1.vpce.amazonaws.com`,
+          port: s.port,
+          timeout: 30
         }))),
       },
     });

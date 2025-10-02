@@ -165,6 +165,13 @@ aws-ecs-privatelink-terraform-cdk/
 │   ├── Dockerfile
 │   ├── app/                       # FastAPI application with health endpoints
 │   └── README.md
+├── microservice-repo/             # 🏗️ Production Microservice Repository
+│   ├── app/                       # FastAPI application with full features
+│   ├── tests/                     # Comprehensive test suite
+│   ├── .github/workflows/         # CI/CD pipeline
+│   ├── Dockerfile                 # Production-ready container
+│   ├── requirements.txt           # Python dependencies
+│   └── README.md                  # Microservice documentation
 └── README.md                      # This comprehensive guide
 ```
 
@@ -352,10 +359,10 @@ If you prefer manual deployment, follow these steps:
    ```
 
 4. Export outputs for CDK:
-   ```bash
-   export VPC_ID=$(terraform output -raw vpc_id)
-   export PUBLIC_SUBNETS=$(terraform output -json public_subnet_ids)
-   export PRIVATE_SUBNETS=$(terraform output -json private_subnet_ids)
+```bash
+export VPC_ID=$(terraform output -raw vpc_id)
+export PUBLIC_SUBNETS=$(terraform output -json public_subnet_ids)
+export PRIVATE_SUBNETS=$(terraform output -json private_subnet_ids)
    export BASE_DEFAULT_SECURITY_GROUP_ID=$(terraform output -raw base_default_security_group_id)
    export BASE_PRIVATE_SECURITY_GROUP_ID=$(terraform output -raw base_private_security_group_id)
    export ECS_TASK_EXECUTION_ROLE_ARN=$(terraform output -raw ecs_task_execution_role_arn)
@@ -789,6 +796,41 @@ resource "aws_ram_resource_association" "custom_resource" {
 ```
 
 ---
+
+## Microservice Repository
+
+### Production-Ready Microservice
+
+The project includes a comprehensive microservice repository (`microservice-repo/`) with:
+
+- **FastAPI Framework** - Modern, fast web framework for building APIs
+- **Health Checks** - `/health` and `/ready` endpoints for load balancer health checks
+- **Service Discovery** - Automatic discovery of other microservices via environment variables
+- **Structured Logging** - JSON-formatted logs for CloudWatch integration
+- **Metrics Collection** - Prometheus-compatible metrics endpoint
+- **CORS Support** - Cross-origin resource sharing for web applications
+- **Rate Limiting** - Built-in rate limiting for API protection
+- **CI/CD Pipeline** - GitHub Actions workflow for automated testing and deployment
+
+### Building and Deploying the Microservice
+
+1. **Build and push to container registry**:
+   ```bash
+   ./scripts/build-microservice.sh ghcr.io your-org/microservice latest 1.0.0
+   ```
+
+2. **Deploy with custom image**:
+   ```bash
+   ./scripts/deploy-provider-account.sh dev us-east-1 222222222222 user-service 8080 ghcr.io/your-org/microservice:latest
+   ```
+
+### Microservice Features
+
+- **API Endpoints**: Health checks, service discovery, cross-service communication
+- **Environment Configuration**: Service name, port, version, logging level
+- **Service Discovery**: Automatic discovery of consumer services via `CONSUMER_SERVICES` environment variable
+- **Monitoring**: Structured logging, metrics collection, health checks
+- **Security**: Rate limiting, CORS support, proper error handling
 
 ## Local Development
 
