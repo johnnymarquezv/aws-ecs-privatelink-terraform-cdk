@@ -64,23 +64,13 @@ output "cloudwatch_logs_vpc_endpoint_id" {
 
 # Cross-account resources
 output "cross_account_role_arn" {
-  value = aws_iam_role.cross_account_role.arn
+  description = "ARN of the cross-account role for resource sharing"
+  value       = aws_iam_role.cross_account_role.arn
 }
 
 output "resource_share_arn" {
-  value = aws_ram_resource_share.vpc_share.arn
-}
-
-output "microservice_vpc_endpoint_service_id" {
-  value = aws_vpc_endpoint_service.microservice.id
-}
-
-output "microservice_load_balancer_arn" {
-  value = aws_lb.microservice.arn
-}
-
-output "microservice_target_group_arn" {
-  value = aws_lb_target_group.microservice.arn
+  description = "ARN of the AWS RAM resource share"
+  value       = aws_ram_resource_share.vpc_share.arn
 }
 
 # Environment information

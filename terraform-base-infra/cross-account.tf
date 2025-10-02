@@ -78,7 +78,6 @@ resource "aws_iam_role_policy" "cross_account_policy" {
 # Cross-account resource policy for VPC sharing
 resource "aws_ram_resource_share" "vpc_share" {
   name                      = "VPC-Share-${var.environment}"
-  description               = "Share VPC resources with microservices accounts"
   allow_external_principals = false
   
   tags = {
@@ -156,97 +155,4 @@ resource "aws_ram_principal_association" "microservices_accounts" {
   
   principal          = each.value
   resource_share_arn = aws_ram_resource_share.vpc_share.arn
-}
-
-# Cross-account VPC endpoint service policy
-resource "aws_vpc_endpoint_service_policy" "cross_account_policy" {
-  vpc_endpoint_service_id = aws_vpc_endpoint_service.microservice.id
-  
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          AWS = [
-            for account_id in var.microservices_accounts : "arn:aws:iam::${account_id}:root"
-          ]
-        }
-        Action = [
-          "vpc:CreateVpcEndpoint",
-          "vpc:DescribeVpcEndpoints",
-          "vpc:DescribeVpcEndpointServices"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# VPC endpoint service for microservices
-resource "aws_vpc_endpoint_service" "microservice" {
-  vpc_endpoint_service_load_balancers = [aws_lb.microservice.arn]
-  acceptance_required                 = false
-  
-  allowed_principals = [
-    for account_id in var.microservices_accounts : "arn:aws:iam::${account_id}:root"
-  ]
-  
-  tags = {
-    Name        = "Microservice-VPC-Endpoint-Service-${var.environment}"
-    Environment = var.environment
-    Project     = "Multi-Account-Microservices"
-  }
-}
-
-# Load balancer for VPC endpoint service
-resource "aws_lb" "microservice" {
-  name               = "microservice-lb-${var.environment}"
-  internal           = true
-  load_balancer_type = "network"
-  subnets            = aws_subnet.private[*].id
-  
-  tags = {
-    Name        = "Microservice-LB-${var.environment}"
-    Environment = var.environment
-    Project     = "Multi-Account-Microservices"
-  }
-}
-
-# Target group for load balancer
-resource "aws_lb_target_group" "microservice" {
-  name     = "microservice-tg-${var.environment}"
-  port     = 80
-  protocol = "TCP"
-  vpc_id   = aws_vpc.base.id
-  
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-  
-  tags = {
-    Name        = "Microservice-TG-${var.environment}"
-    Environment = var.environment
-    Project     = "Multi-Account-Microservices"
-  }
-}
-
-# Listener for load balancer
-resource "aws_lb_listener" "microservice" {
-  load_balancer_arn = aws_lb.microservice.arn
-  port              = "80"
-  protocol          = "TCP"
-  
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.microservice.arn
-  }
 }

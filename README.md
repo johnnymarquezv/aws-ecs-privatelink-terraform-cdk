@@ -54,9 +54,9 @@ This project implements a **hybrid infrastructure-as-code approach** that combin
 
 ```
 Organization Root Account
-├── Security Account (Audit, Logging, Security Tools)
+├── Security Account (Audit, Logging, Security Tools) ← Terraform Security
 ├── Networking Account (Shared VPC, Transit Gateway, DNS) ← Terraform
-├── Shared Services Account (CI/CD, Monitoring, Artifacts)
+├── Shared Services Account (CI/CD, Monitoring, Artifacts) ← Terraform Shared Services
 └── Microservices Accounts
     ├── Provider Account 1 (user-service) ← CDK Provider
     ├── Provider Account 2 (notification-service) ← CDK Provider
@@ -73,6 +73,9 @@ Organization Root Account
 - **Base IAM Roles**: Security compliance and access management
 - **Centralized Logging**: Consistent retention policies and monitoring
 - **Network Monitoring**: VPC Flow Logs and security analysis
+- **Security Services**: CloudTrail, GuardDuty, Security Hub, AWS Config, Inspector
+- **CI/CD Infrastructure**: CodeBuild, ECR, build artifacts storage
+- **Monitoring Services**: Prometheus, CloudWatch dashboards, X-Ray tracing
 
 #### **CDK Provider (Dynamic Resources)**
 - **ECS Infrastructure**: Clusters, services, task definitions
@@ -135,8 +138,18 @@ graph TB
 
 ```
 aws-ecs-privatelink-terraform-cdk/
-├── terraform-base-infra/          # 🌐 Terraform Account (Networking)
+├── terraform-base-infra/          # 🌐 Networking Account (Terraform)
 │   ├── main.tf                   # VPC, subnets, security groups, VPC endpoints, IAM roles, logs
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── provider.tf
+├── terraform-security-account/   # 🔒 Security Account (Terraform)
+│   ├── main.tf                   # CloudTrail, GuardDuty, Security Hub, Config, Inspector
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── provider.tf
+├── terraform-shared-services-account/  # 🛠️ Shared Services Account (Terraform)
+│   ├── main.tf                   # CodeBuild, ECR, Prometheus, monitoring services
 │   ├── variables.tf
 │   ├── outputs.tf
 │   └── provider.tf
@@ -158,19 +171,19 @@ aws-ecs-privatelink-terraform-cdk/
 │   └── README.md
 ├── scripts/                       # 🚀 Deployment Scripts
 │   ├── deploy-terraform-account.sh    # Deploy networking infrastructure
+│   ├── deploy-security-account.sh     # Deploy security services
+│   ├── deploy-shared-services-account.sh  # Deploy CI/CD and monitoring
 │   ├── deploy-provider-account.sh     # Deploy service providers
 │   ├── deploy-consumer-account.sh     # Deploy service consumers
-│   └── deploy-all-accounts.sh         # Master orchestration script
-├── microservice/                  # 🧪 Local Testing
-│   ├── Dockerfile
-│   ├── app/                       # FastAPI application with health endpoints
-│   └── README.md
+│   ├── deploy-all-accounts.sh         # Master orchestration script
+│   └── build-microservice.sh          # Build and push microservice container
 ├── microservice-repo/             # 🏗️ Production Microservice Repository
 │   ├── app/                       # FastAPI application with full features
 │   ├── tests/                     # Comprehensive test suite
 │   ├── .github/workflows/         # CI/CD pipeline
 │   ├── Dockerfile                 # Production-ready container
 │   ├── requirements.txt           # Python dependencies
+│   ├── deployment-example.md      # Deployment guide
 │   └── README.md                  # Microservice documentation
 └── README.md                      # This comprehensive guide
 ```
@@ -226,13 +239,29 @@ Use the master orchestration script to deploy all three account types:
 
 ### Option 2: Individual Account Deployment
 
-#### Step 1: Deploy Terraform Account (Networking Infrastructure)
+#### Step 1: Deploy Security Account (Security Services)
+
+Deploy centralized security and audit services:
+
+```bash
+./scripts/deploy-security-account.sh dev us-east-1 888888888888 123456789012:111111111111:999999999999:222222222222,333333333333:444444444444,555555555555
+```
+
+#### Step 2: Deploy Shared Services Account (CI/CD and Monitoring)
+
+Deploy CI/CD pipeline and monitoring services:
+
+```bash
+./scripts/deploy-shared-services-account.sh dev us-east-1 999999999999 123456789012:888888888888:111111111111:222222222222,333333333333:444444444444,555555555555 https://github.com/your-org/microservice
+```
+
+#### Step 3: Deploy Terraform Account (Networking Infrastructure)
 
 ```bash
 ./scripts/deploy-terraform-account.sh dev us-east-1 111111111111 222222222222,333333333333,444444444444
 ```
 
-#### Step 2: Deploy Provider Accounts (Service Providers)
+#### Step 4: Deploy Provider Accounts (Service Providers)
 
 ```bash
 # Deploy to provider account 1
@@ -242,7 +271,7 @@ Use the master orchestration script to deploy all three account types:
 ./scripts/deploy-provider-account.sh dev us-east-1 333333333333 user-service 3000 nginx:alpine
 ```
 
-#### Step 3: Deploy Consumer Accounts (Service Consumers)
+#### Step 5: Deploy Consumer Accounts (Service Consumers)
 
 ```bash
 # Deploy to consumer account 1
@@ -834,9 +863,9 @@ The project includes a comprehensive microservice repository (`microservice-repo
 
 ## Local Development
 
-### Local Microservice for Testing
+### Local Development and Testing
 
-The project includes a FastAPI microservice for local testing of VPC endpoint connectivity:
+The `microservice-repo/` directory contains a production-ready FastAPI microservice that can be used for both local development and production deployment:
 
 #### Prerequisites
 - Python 3.11+
@@ -845,7 +874,7 @@ The project includes a FastAPI microservice for local testing of VPC endpoint co
 
 #### Install Dependencies
 ```bash
-cd microservice
+cd microservice-repo
 python -m venv venv
 source venv/bin/activate # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -859,32 +888,41 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 Visit [http://localhost:8000](http://localhost:8000) to test the service.
 
 #### API Endpoints
-- `GET /` - Returns a welcome message
-- `GET /hello` - Returns a simple greeting message
-- `GET /health` - Health check endpoint for load balancer health checks
+- `GET /` - Returns a welcome message and service information
+- `GET /health` - Basic health check endpoint
+- `GET /ready` - Readiness check (includes dependency checks)
+- `GET /services` - List of discovered consumer services
+- `POST /call/{service_name}` - Call another microservice
+- `GET /status` - Detailed service status and metrics
+- `GET /metrics` - Prometheus-compatible metrics
 
 #### Docker Support
 ```bash
 # Build the Docker image
-docker build -t ecs-python-microservice .
+docker build -t microservice:latest microservice-repo/
 
 # Run the container locally
-docker run -p 8000:8000 ecs-python-microservice
+docker run -p 8000:8000 \
+  -e SERVICE_NAME=test-service \
+  -e CONSUMER_SERVICES='[{"name":"user-service","endpoint":"localhost","port":8080}]' \
+  microservice:latest
 ```
 
 #### Testing VPC Endpoint Connectivity
-1. Deploy CDK Stack First - Ensure the CDK stack is deployed and note the VPC Endpoint Service DNS name
-2. Run Local Microservice - Start the local microservice
-3. Test Connectivity - From within the VPC, test connectivity to the CDK-deployed microservice:
+1. **Deploy CDK Stack First** - Ensure the CDK stack is deployed and note the VPC Endpoint Service DNS name
+2. **Run Microservice** - Start the microservice locally or in a container
+3. **Test Connectivity** - From within the VPC, test connectivity to other microservices:
    ```bash
    # Test health endpoint
    curl http://<vpc-endpoint-dns-name>/health
    
-   # Test basic connectivity
-   curl http://<vpc-endpoint-dns-name>/
+   # Test service discovery
+   curl http://<vpc-endpoint-dns-name>/services
    
-   # Test from local microservice
-   curl http://<vpc-endpoint-dns-name>/hello
+   # Test cross-service communication
+   curl -X POST http://<vpc-endpoint-dns-name>/call/user-service \
+     -H "Content-Type: application/json" \
+     -d '{"test": "data"}'
    ```
 
 ---
