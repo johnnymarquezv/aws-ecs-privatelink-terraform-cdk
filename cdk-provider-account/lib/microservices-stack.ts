@@ -19,11 +19,10 @@ export interface MicroservicesStackProps extends cdk.StackProps {
   ecsTaskExecutionRoleArn: string;
   ecsTaskRoleArn: string;
   ecsApplicationLogGroupName: string;
-  consumerEndpointServices?: Array<{
-    serviceName: string;
-    vpcEndpointServiceId: string;
-    port: number;
-  }>;
+  // Multi-account configuration
+  allowedAccounts?: string[];
+  environment?: string;
+  serviceDescription?: string;
 }
 
 export class MicroservicesStack extends cdk.Stack {
@@ -163,16 +162,18 @@ export class MicroservicesStack extends cdk.Stack {
     // Attach ECS service to target group
     ecsService.attachToNetworkTargetGroup(targetGroup);
 
-    // Create VPC Endpoint Service (Provider)
+    // Create VPC Endpoint Service (Provider) with proper cross-account access
+    const allowedPrincipals = props.allowedAccounts && props.allowedAccounts.length > 0
+      ? props.allowedAccounts.map(accountId => new iam.ArnPrincipal(`arn:aws:iam::${accountId}:root`))
+      : [new iam.ArnPrincipal('*')]; // Fallback to allow all if no accounts specified
+
     this.vpcEndpointService = new ec2.VpcEndpointService(this, 'MicroserviceVpcEndpointService', {
       vpcEndpointServiceLoadBalancers: [this.nlb],
       acceptanceRequired: false,
-      allowedPrincipals: [
-        new iam.ArnPrincipal('*'), // In production, restrict this to specific accounts
-      ],
+      allowedPrincipals: allowedPrincipals,
     });
 
-    // Note: Consumer VPC endpoints are now managed by the separate ConnectivityStack
+    // Provider-specific outputs and configuration
 
     // Outputs
     new cdk.CfnOutput(this, 'VpcEndpointServiceId', {

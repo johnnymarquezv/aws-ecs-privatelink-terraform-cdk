@@ -2,7 +2,6 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { MicroservicesStack } from '../lib/microservices-stack';
-import { ConnectivityStack } from '../lib/connectivity-stack';
 
 const app = new cdk.App();
 
@@ -14,6 +13,12 @@ const publicSubnetIds = JSON.parse(
 const privateSubnetIds = JSON.parse(
   app.node.tryGetContext('privateSubnetIds') || process.env.PRIVATE_SUBNETS || '[]'
 );
+
+// Multi-account configuration
+const environment = app.node.tryGetContext('environment') || process.env.ENVIRONMENT || 'dev';
+const accountId = app.node.tryGetContext('accountId') || process.env.CDK_DEFAULT_ACCOUNT;
+const allowedAccounts = app.node.tryGetContext('allowedAccounts') || process.env.ALLOWED_ACCOUNTS || '[]';
+const crossAccountExternalId = app.node.tryGetContext('crossAccountExternalId') || process.env.CROSS_ACCOUNT_EXTERNAL_ID;
 
 // Terraform-managed resources
 const baseDefaultSecurityGroupId = app.node.tryGetContext('baseDefaultSecurityGroupId') || process.env.BASE_DEFAULT_SECURITY_GROUP_ID;
@@ -27,8 +32,32 @@ const microserviceName = app.node.tryGetContext('microserviceName') || 'microser
 const microservicePort = parseInt(app.node.tryGetContext('microservicePort') || '80'); // nginx default port
 const microserviceImage = app.node.tryGetContext('microserviceImage') || 'nginx:alpine'; // Public image suitable for testing
 
-// Consumer endpoint services configuration (for consuming other microservices)
-const consumerEndpointServices = app.node.tryGetContext('consumerEndpointServices') || [];
+// Provider-specific configuration
+const serviceDescription = app.node.tryGetContext('serviceDescription') || `Microservice ${microserviceName} provider`;
+
+// Environment-specific configuration
+const environmentConfig = {
+  dev: {
+    minCapacity: 1,
+    maxCapacity: 3,
+    instanceType: 't3.micro',
+    allowedAccounts: ['123456789012', '234567890123']
+  },
+  staging: {
+    minCapacity: 2,
+    maxCapacity: 5,
+    instanceType: 't3.small',
+    allowedAccounts: ['123456789012', '234567890123', '345678901234']
+  },
+  prod: {
+    minCapacity: 3,
+    maxCapacity: 10,
+    instanceType: 't3.medium',
+    allowedAccounts: ['123456789012', '234567890123', '345678901234', '456789012345']
+  }
+};
+
+const config = environmentConfig[environment] || environmentConfig.dev;
 
 // Validate required context
 if (!vpcId) {
@@ -41,6 +70,15 @@ if (publicSubnetIds.length === 0) {
 
 if (privateSubnetIds.length === 0) {
   throw new Error('privateSubnetIds context is required. Use -c privateSubnetIds=<json-array> or set PRIVATE_SUBNETS environment variable.');
+}
+
+// Validate multi-account configuration
+if (!accountId) {
+  throw new Error('accountId context is required. Use -c accountId=<account-id> or set CDK_DEFAULT_ACCOUNT environment variable.');
+}
+
+if (allowedAccounts.length === 0) {
+  console.warn('Warning: No allowed accounts specified. VPC Endpoint Service will allow all accounts.');
 }
 
 // Validate Terraform-managed resources
@@ -64,10 +102,10 @@ if (!ecsApplicationLogGroupName) {
   throw new Error('ecsApplicationLogGroupName context is required. Use -c ecsApplicationLogGroupName=<log-group-name> or set ECS_APPLICATION_LOG_GROUP_NAME environment variable.');
 }
 
-// Create the microservices stack
-new MicroservicesStack(app, `${microserviceName}-stack`, {
+// Create the provider microservices stack
+new MicroservicesStack(app, `${microserviceName}-provider-stack`, {
   env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
+    account: accountId,
     region: process.env.CDK_DEFAULT_REGION,
   },
   vpcId,
@@ -81,33 +119,19 @@ new MicroservicesStack(app, `${microserviceName}-stack`, {
   ecsTaskExecutionRoleArn,
   ecsTaskRoleArn,
   ecsApplicationLogGroupName,
-  description: `Microservices stack for ${microserviceName} with ECS, NLB, and VPC Endpoint Services`,
+  allowedAccounts: allowedAccounts.length > 0 ? allowedAccounts : config.allowedAccounts,
+  environment,
+  serviceDescription,
+  description: `Provider stack for ${microserviceName} with ECS, NLB, and VPC Endpoint Services`,
   tags: {
     Project: 'Multi-Account-Microservices',
     Service: microserviceName,
-    Environment: 'production',
+    Environment: environment,
+    AccountId: accountId,
+    AccountType: 'Provider',
+    ManagedBy: 'CDK',
   },
 });
-
-// Create the connectivity stack for cross-account VPC endpoints
-if (consumerEndpointServices.length > 0) {
-  new ConnectivityStack(app, `${microserviceName}-connectivity-stack`, {
-    env: {
-      account: process.env.CDK_DEFAULT_ACCOUNT,
-      region: process.env.CDK_DEFAULT_REGION,
-    },
-    vpcId,
-    privateSubnetIds,
-    basePrivateSecurityGroupId,
-    consumerEndpointServices,
-    description: `Connectivity stack for ${microserviceName} with cross-account VPC endpoints`,
-    tags: {
-      Project: 'Multi-Account-Microservices',
-      Service: microserviceName,
-      Environment: 'production',
-    },
-  });
-}
 
 // Add CDK metadata
 cdk.Tags.of(app).add('Project', 'Multi-Account-Microservices');
