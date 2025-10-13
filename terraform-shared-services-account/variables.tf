@@ -1,92 +1,44 @@
-variable "aws_region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
-}
-
-variable "account_id" {
-  description = "Current AWS account ID (Shared Services Account)"
-  type        = string
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "Environment must be dev, staging, or prod."
+# Hardcoded configuration constants
+locals {
+  # Account configuration
+  aws_region = "us-east-1"
+  account_id = "999999999999"  # Shared Services Account ID
+  
+  # Organization accounts
+  organization_accounts = {
+    root_account_id         = "000000000000"
+    security_account_id     = "888888888888"
+    networking_account_id   = "111111111111"
+    provider_account_ids    = ["222222222222"]
+    consumer_account_ids    = ["333333333333"]
   }
-}
-
-variable "organization_accounts" {
-  description = "Map of organization account IDs"
-  type = object({
-    root_account_id         = string
-    security_account_id     = string
-    networking_account_id   = string
-    provider_account_ids    = list(string)
-    consumer_account_ids    = list(string)
-  })
-}
-
-variable "artifacts_s3_bucket_name" {
-  description = "S3 bucket name for build artifacts"
-  type        = string
-}
-
-variable "container_registry_name" {
-  description = "ECR repository name for container images"
-  type        = string
-  default     = "microservice"
-}
-
-variable "codebuild_compute_type" {
-  description = "CodeBuild compute type"
-  type        = string
-  default     = "BUILD_GENERAL1_MEDIUM"
-  validation {
-    condition = contains([
-      "BUILD_GENERAL1_SMALL",
-      "BUILD_GENERAL1_MEDIUM",
-      "BUILD_GENERAL1_LARGE",
-      "BUILD_GENERAL1_2XLARGE"
-    ], var.codebuild_compute_type)
-    error_message = "Must be a valid CodeBuild compute type."
+  
+  # Service configuration
+  container_registry_name = "microservice"
+  codebuild_compute_type = "BUILD_GENERAL1_MEDIUM"
+  github_repo_url = "https://github.com/your-org/microservice"
+  github_token_secret_name = "github-token"
+  monitoring_retention_days = 30
+  enable_xray = true
+  prometheus_workspace_alias = "microservices-monitoring"
+  
+  # Environment-specific configuration
+  environment_config = {
+    dev = {
+      cross_account_external_id = "multi-account-dev-2024"
+      artifacts_s3_bucket_name = "microservice-artifacts-dev-2024"
+    }
+    staging = {
+      cross_account_external_id = "multi-account-staging-2024"
+      artifacts_s3_bucket_name = "microservice-artifacts-staging-2024"
+    }
+    prod = {
+      cross_account_external_id = "multi-account-prod-2024"
+      artifacts_s3_bucket_name = "microservice-artifacts-prod-2024"
+    }
   }
-}
-
-variable "github_repo_url" {
-  description = "GitHub repository URL for the microservice"
-  type        = string
-  default     = ""
-}
-
-variable "github_token_secret_name" {
-  description = "AWS Secrets Manager secret name for GitHub token"
-  type        = string
-  default     = "github-token"
-}
-
-variable "cross_account_external_id" {
-  description = "External ID for cross-account role assumption"
-  type        = string
-  sensitive   = true
-}
-
-variable "monitoring_retention_days" {
-  description = "CloudWatch logs retention in days"
-  type        = number
-  default     = 30
-}
-
-variable "enable_xray" {
-  description = "Enable AWS X-Ray tracing"
-  type        = bool
-  default     = true
-}
-
-variable "prometheus_workspace_alias" {
-  description = "Amazon Managed Service for Prometheus workspace alias"
-  type        = string
-  default     = "microservices-monitoring"
+  
+  # Get current environment from workspace
+  environment = terraform.workspace
+  current_config = local.environment_config[local.environment]
 }

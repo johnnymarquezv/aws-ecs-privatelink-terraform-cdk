@@ -1,72 +1,48 @@
-variable "aws_region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
-}
-
-variable "account_id" {
-  description = "Current AWS account ID (Security Account)"
-  type        = string
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "Environment must be dev, staging, or prod."
+# Hardcoded configuration constants
+locals {
+  # Account configuration
+  aws_region = "us-east-1"
+  account_id = "888888888888"  # Security Account ID
+  
+  # Organization accounts
+  organization_accounts = {
+    root_account_id         = "000000000000"
+    networking_account_id   = "111111111111"
+    shared_services_account_id = "999999999999"
+    provider_account_ids    = ["222222222222"]
+    consumer_account_ids    = ["333333333333"]
   }
-}
-
-variable "organization_accounts" {
-  description = "Map of organization account IDs"
-  type = object({
-    root_account_id         = string
-    networking_account_id   = string
-    shared_services_account_id = string
-    provider_account_ids    = list(string)
-    consumer_account_ids    = list(string)
-  })
-}
-
-variable "cloudtrail_s3_bucket_name" {
-  description = "S3 bucket name for CloudTrail logs"
-  type        = string
-}
-
-variable "config_s3_bucket_name" {
-  description = "S3 bucket name for AWS Config"
-  type        = string
-}
-
-variable "security_hub_standards" {
-  description = "List of Security Hub standards to enable"
-  type        = list(string)
-  default = [
+  
+  # Security configuration
+  security_hub_standards = [
     "aws-foundational-security-standard",
     "cis-aws-foundations-benchmark",
     "pci-dss"
   ]
-}
-
-variable "guardduty_finding_publishing_frequency" {
-  description = "GuardDuty finding publishing frequency"
-  type        = string
-  default     = "FIFTEEN_MINUTES"
-  validation {
-    condition     = contains(["FIFTEEN_MINUTES", "ONE_HOUR", "SIX_HOURS"], var.guardduty_finding_publishing_frequency)
-    error_message = "Must be FIFTEEN_MINUTES, ONE_HOUR, or SIX_HOURS."
+  
+  guardduty_finding_publishing_frequency = "FIFTEEN_MINUTES"
+  inspector_assessment_duration = 3600
+  
+  # Environment-specific configuration
+  environment_config = {
+    dev = {
+      cross_account_external_id = "multi-account-dev-2024"
+      cloudtrail_s3_bucket_name = "cloudtrail-logs-dev-2024"
+      config_s3_bucket_name = "config-logs-dev-2024"
+    }
+    staging = {
+      cross_account_external_id = "multi-account-staging-2024"
+      cloudtrail_s3_bucket_name = "cloudtrail-logs-staging-2024"
+      config_s3_bucket_name = "config-logs-staging-2024"
+    }
+    prod = {
+      cross_account_external_id = "multi-account-prod-2024"
+      cloudtrail_s3_bucket_name = "cloudtrail-logs-prod-2024"
+      config_s3_bucket_name = "config-logs-prod-2024"
+    }
   }
-}
-
-variable "inspector_assessment_duration" {
-  description = "Inspector assessment duration in seconds"
-  type        = number
-  default     = 3600
-}
-
-variable "cross_account_external_id" {
-  description = "External ID for cross-account role assumption"
-  type        = string
-  sensitive   = true
+  
+  # Get current environment from workspace
+  environment = terraform.workspace
+  current_config = local.environment_config[local.environment]
 }

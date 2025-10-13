@@ -1,51 +1,38 @@
-variable "aws_region" {
-  type    = string
-  default = "us-east-1"
-}
-
-variable "vpc_cidr" {
-  type    = string
-  default = "10.0.0.0/16"
-}
-
-variable "public_subnet_cidrs" {
-  type    = list(string)
-  default = ["10.0.1.0/24", "10.0.2.0/24"]
-}
-
-variable "private_subnet_cidrs" {
-  type    = list(string)
-  default = ["10.0.3.0/24", "10.0.4.0/24"]
-}
-
-variable "isolated_subnet_cidrs" {
-  type    = list(string)
-  default = ["10.0.5.0/28", "10.0.6.0/28"]
-}
-
-# Multi-account configuration
-variable "account_id" {
-  description = "Current AWS account ID"
-  type        = string
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "Environment must be dev, staging, or prod."
+# Hardcoded configuration constants
+locals {
+  # Account configuration
+  aws_region = "us-east-1"
+  account_id = "111111111111"  # Networking Account ID
+  
+  # Network configuration
+  vpc_cidr = "10.0.0.0/16"
+  public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
+  private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
+  isolated_subnet_cidrs = ["10.0.5.0/28", "10.0.6.0/28"]
+  
+  # Multi-account configuration
+  microservices_accounts = ["222222222222", "333333333333"]  # Provider and Consumer accounts
+  
+  # Environment-specific configuration
+  environment_config = {
+    dev = {
+      cross_account_external_id = "multi-account-dev-2024"
+      log_retention_days = 7
+      backup_retention_days = 7
+    }
+    staging = {
+      cross_account_external_id = "multi-account-staging-2024"
+      log_retention_days = 30
+      backup_retention_days = 30
+    }
+    prod = {
+      cross_account_external_id = "multi-account-prod-2024"
+      log_retention_days = 90
+      backup_retention_days = 90
+    }
   }
-}
-
-variable "microservices_accounts" {
-  description = "List of microservices account IDs"
-  type        = list(string)
-  default     = []
-}
-
-variable "cross_account_external_id" {
-  description = "External ID for cross-account role assumption"
-  type        = string
-  sensitive   = true
+  
+  # Get current environment from workspace
+  environment = terraform.workspace
+  current_config = local.environment_config[local.environment]
 }

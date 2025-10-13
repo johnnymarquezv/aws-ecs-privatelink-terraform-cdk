@@ -79,7 +79,7 @@ output "codebuild_log_group" {
 
 output "dashboard_url" {
   description = "CloudWatch dashboard URL"
-  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.shared_services.dashboard_name}"
+  value       = "https://${local.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${local.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.shared_services.dashboard_name}"
 }
 
 # SNS
@@ -91,7 +91,7 @@ output "deployment_notifications_topic_arn" {
 # X-Ray
 output "xray_sampling_rule_name" {
   description = "Name of the X-Ray sampling rule"
-  value       = var.enable_xray ? aws_xray_sampling_rule.microservices[0].rule_name : null
+  value       = local.enable_xray ? aws_xray_sampling_rule.microservices[0].rule_name : null
 }
 
 # Secrets Manager
@@ -124,5 +124,17 @@ output "account_id" {
 
 output "environment" {
   description = "Environment name"
-  value       = var.environment
+  value       = local.environment
 }
+
+# Additional SSM Parameter Store outputs for CDK integration
+output "artifacts_s3_bucket_parameter" {
+  description = "SSM Parameter Store parameter for artifacts S3 bucket"
+  value       = aws_ssm_parameter.artifacts_s3_bucket.name
+}
+
+output "ecr_repository_url_parameter" {
+  description = "SSM Parameter Store parameter for ECR repository URL"
+  value       = aws_ssm_parameter.ecr_repository_url.name
+}
+

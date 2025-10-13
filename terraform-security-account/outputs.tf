@@ -76,5 +76,5 @@ output "account_id" {
 
 output "environment" {
   description = "Environment name"
-  value       = var.environment
+  value       = local.environment
 }

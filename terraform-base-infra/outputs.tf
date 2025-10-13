@@ -75,13 +75,54 @@ output "resource_share_arn" {
 
 # Environment information
 output "environment" {
-  value = var.environment
+  value = local.environment
 }
 
 output "account_id" {
-  value = var.account_id
+  value = local.account_id
 }
 
 output "microservices_accounts" {
-  value = var.microservices_accounts
+  value = local.microservices_accounts
+}
+
+# SSM Parameter Store outputs
+output "vpc_id_parameter" {
+  description = "SSM Parameter Store parameter for VPC ID"
+  value       = aws_ssm_parameter.vpc_id.name
+}
+
+output "public_subnet_ids_parameter" {
+  description = "SSM Parameter Store parameter for public subnet IDs"
+  value       = aws_ssm_parameter.public_subnet_ids.name
+}
+
+output "private_subnet_ids_parameter" {
+  description = "SSM Parameter Store parameter for private subnet IDs"
+  value       = aws_ssm_parameter.private_subnet_ids.name
+}
+
+output "base_default_security_group_id_parameter" {
+  description = "SSM Parameter Store parameter for base default security group ID"
+  value       = aws_ssm_parameter.base_default_security_group_id.name
+}
+
+output "base_private_security_group_id_parameter" {
+  description = "SSM Parameter Store parameter for base private security group ID"
+  value       = aws_ssm_parameter.base_private_security_group_id.name
+}
+
+output "ecs_task_execution_role_arn_parameter" {
+  description = "SSM Parameter Store parameter for ECS task execution role ARN"
+  value       = aws_ssm_parameter.ecs_task_execution_role_arn.name
+}
+
+output "ecs_task_role_arn_parameter" {
+  description = "SSM Parameter Store parameter for ECS task role ARN"
+  value       = aws_ssm_parameter.ecs_task_role_arn.name
+}
+
+output "ecs_application_log_group_name_parameter" {
+  description = "SSM Parameter Store parameter for ECS application log group name"
+  value       = aws_ssm_parameter.ecs_application_log_group_name.name
 }

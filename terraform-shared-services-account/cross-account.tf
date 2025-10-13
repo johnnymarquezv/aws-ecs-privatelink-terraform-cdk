@@ -13,9 +13,9 @@ resource "aws_ecr_repository_policy" "microservice" {
         Effect = "Allow"
         Principal = {
           AWS = flatten([
-            "arn:aws:iam::${var.organization_accounts.networking_account_id}:root",
-            [for account_id in var.organization_accounts.provider_account_ids : "arn:aws:iam::${account_id}:root"],
-            [for account_id in var.organization_accounts.consumer_account_ids : "arn:aws:iam::${account_id}:root"]
+            "arn:aws:iam::${local.organization_accounts.networking_account_id}:root",
+            [for account_id in local.organization_accounts.provider_account_ids : "arn:aws:iam::${account_id}:root"],
+            [for account_id in local.organization_accounts.consumer_account_ids : "arn:aws:iam::${account_id}:root"]
           ])
         }
         Action = [
@@ -29,7 +29,7 @@ resource "aws_ecr_repository_policy" "microservice" {
         Effect = "Allow"
         Principal = {
           AWS = [
-            "arn:aws:iam::${var.organization_accounts.networking_account_id}:root"
+            "arn:aws:iam::${local.organization_accounts.networking_account_id}:root"
           ]
         }
         Action = [
@@ -48,7 +48,7 @@ resource "aws_ecr_repository_policy" "microservice" {
 
 # IAM role for cross-account monitoring access
 resource "aws_iam_role" "monitoring_role" {
-  name = "MonitoringRole-${var.environment}"
+  name = "MonitoringRole-${local.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -58,15 +58,15 @@ resource "aws_iam_role" "monitoring_role" {
         Effect = "Allow"
         Principal = {
           AWS = flatten([
-            "arn:aws:iam::${var.organization_accounts.security_account_id}:root",
-            "arn:aws:iam::${var.organization_accounts.networking_account_id}:root",
-            [for account_id in var.organization_accounts.provider_account_ids : "arn:aws:iam::${account_id}:root"],
-            [for account_id in var.organization_accounts.consumer_account_ids : "arn:aws:iam::${account_id}:root"]
+            "arn:aws:iam::${local.organization_accounts.security_account_id}:root",
+            "arn:aws:iam::${local.organization_accounts.networking_account_id}:root",
+            [for account_id in local.organization_accounts.provider_account_ids : "arn:aws:iam::${account_id}:root"],
+            [for account_id in local.organization_accounts.consumer_account_ids : "arn:aws:iam::${account_id}:root"]
           ])
         }
         Condition = {
           StringEquals = {
-            "sts:ExternalId" = var.cross_account_external_id
+            "sts:ExternalId" = local.current_config.cross_account_external_id
           }
         }
       }
@@ -74,15 +74,15 @@ resource "aws_iam_role" "monitoring_role" {
   })
 
   tags = {
-    Name        = "MonitoringRole-${var.environment}"
-    Environment = var.environment
+    Name        = "MonitoringRole-${local.environment}"
+    Environment = local.environment
     Purpose     = "Cross-account monitoring"
   }
 }
 
 # Monitoring policy
 resource "aws_iam_role_policy" "monitoring_policy" {
-  name = "MonitoringPolicy-${var.environment}"
+  name = "MonitoringPolicy-${local.environment}"
   role = aws_iam_role.monitoring_role.id
 
   policy = jsonencode({
@@ -145,7 +145,7 @@ resource "aws_iam_role_policy" "monitoring_policy" {
 
 # Cross-account CI/CD role
 resource "aws_iam_role" "cicd_role" {
-  name = "CICDRole-${var.environment}"
+  name = "CICDRole-${local.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -155,14 +155,14 @@ resource "aws_iam_role" "cicd_role" {
         Effect = "Allow"
         Principal = {
           AWS = flatten([
-            "arn:aws:iam::${var.organization_accounts.networking_account_id}:root",
-            [for account_id in var.organization_accounts.provider_account_ids : "arn:aws:iam::${account_id}:root"],
-            [for account_id in var.organization_accounts.consumer_account_ids : "arn:aws:iam::${account_id}:root"]
+            "arn:aws:iam::${local.organization_accounts.networking_account_id}:root",
+            [for account_id in local.organization_accounts.provider_account_ids : "arn:aws:iam::${account_id}:root"],
+            [for account_id in local.organization_accounts.consumer_account_ids : "arn:aws:iam::${account_id}:root"]
           ])
         }
         Condition = {
           StringEquals = {
-            "sts:ExternalId" = var.cross_account_external_id
+            "sts:ExternalId" = local.current_config.cross_account_external_id
           }
         }
       }
@@ -170,15 +170,15 @@ resource "aws_iam_role" "cicd_role" {
   })
 
   tags = {
-    Name        = "CICDRole-${var.environment}"
-    Environment = var.environment
+    Name        = "CICDRole-${local.environment}"
+    Environment = local.environment
     Purpose     = "Cross-account CI/CD"
   }
 }
 
 # CI/CD policy
 resource "aws_iam_role_policy" "cicd_policy" {
-  name = "CICDPolicy-${var.environment}"
+  name = "CICDPolicy-${local.environment}"
   role = aws_iam_role.cicd_role.id
 
   policy = jsonencode({
@@ -241,73 +241,73 @@ resource "aws_iam_role_policy" "cicd_policy" {
 
 # Parameter Store parameters for cross-account configuration
 resource "aws_ssm_parameter" "ecr_repository_uri" {
-  name  = "/shared-services/${var.environment}/ecr-repository-uri"
+  name  = "/shared-services/${local.environment}/ecr-repository-uri"
   type  = "String"
   value = aws_ecr_repository.microservice.repository_url
 
   tags = {
-    Name        = "ECR-Repository-URI-${var.environment}"
-    Environment = var.environment
+    Name        = "ECR-Repository-URI-${local.environment}"
+    Environment = local.environment
     Purpose     = "Cross-account configuration"
   }
 }
 
 resource "aws_ssm_parameter" "prometheus_workspace_id" {
-  name  = "/shared-services/${var.environment}/prometheus-workspace-id"
+  name  = "/shared-services/${local.environment}/prometheus-workspace-id"
   type  = "String"
   value = aws_prometheus_workspace.microservices.id
 
   tags = {
-    Name        = "Prometheus-Workspace-ID-${var.environment}"
-    Environment = var.environment
+    Name        = "Prometheus-Workspace-ID-${local.environment}"
+    Environment = local.environment
     Purpose     = "Cross-account configuration"
   }
 }
 
 resource "aws_ssm_parameter" "monitoring_role_arn" {
-  name  = "/shared-services/${var.environment}/monitoring-role-arn"
+  name  = "/shared-services/${local.environment}/monitoring-role-arn"
   type  = "String"
   value = aws_iam_role.monitoring_role.arn
 
   tags = {
-    Name        = "Monitoring-Role-ARN-${var.environment}"
-    Environment = var.environment
+    Name        = "Monitoring-Role-ARN-${local.environment}"
+    Environment = local.environment
     Purpose     = "Cross-account configuration"
   }
 }
 
 resource "aws_ssm_parameter" "cicd_role_arn" {
-  name  = "/shared-services/${var.environment}/cicd-role-arn"
+  name  = "/shared-services/${local.environment}/cicd-role-arn"
   type  = "String"
   value = aws_iam_role.cicd_role.arn
 
   tags = {
-    Name        = "CICD-Role-ARN-${var.environment}"
-    Environment = var.environment
+    Name        = "CICD-Role-ARN-${local.environment}"
+    Environment = local.environment
     Purpose     = "Cross-account configuration"
   }
 }
 
 resource "aws_ssm_parameter" "artifacts_bucket_name" {
-  name  = "/shared-services/${var.environment}/artifacts-bucket-name"
+  name  = "/shared-services/${local.environment}/artifacts-bucket-name"
   type  = "String"
   value = aws_s3_bucket.artifacts.id
 
   tags = {
-    Name        = "Artifacts-Bucket-Name-${var.environment}"
-    Environment = var.environment
+    Name        = "Artifacts-Bucket-Name-${local.environment}"
+    Environment = local.environment
     Purpose     = "Cross-account configuration"
   }
 }
 
 resource "aws_ssm_parameter" "codebuild_project_name" {
-  name  = "/shared-services/${var.environment}/codebuild-project-name"
+  name  = "/shared-services/${local.environment}/codebuild-project-name"
   type  = "String"
   value = aws_codebuild_project.microservice.name
 
   tags = {
-    Name        = "CodeBuild-Project-Name-${var.environment}"
-    Environment = var.environment
+    Name        = "CodeBuild-Project-Name-${local.environment}"
+    Environment = local.environment
     Purpose     = "Cross-account configuration"
   }
 }

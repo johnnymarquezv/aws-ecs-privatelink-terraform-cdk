@@ -6,15 +6,23 @@ terraform {
       version = "~> 5.0"
     }
   }
+  # Using local backend for testing purposes
+  # backend "s3" {
+  #   bucket         = "your-terraform-state-bucket"
+  #   key            = "shared-services-account/terraform.tfstate"
+  #   region         = "us-east-1"
+  #   dynamodb_table = "terraform-lock-table"
+  #   encrypt        = true
+  # }
 }
 
 provider "aws" {
-  region = var.aws_region
+  region = local.aws_region
   
   default_tags {
     tags = {
       Project     = "Multi-Account-Microservices"
-      Environment = var.environment
+      Environment = local.environment
       ManagedBy   = "Terraform"
       AccountType = "shared-services"
     }

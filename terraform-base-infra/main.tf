@@ -1,15 +1,16 @@
 resource "aws_vpc" "base" {
-  cidr_block           = var.vpc_cidr
+  cidr_block           = local.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
   tags = {
-    Name = "base-vpc"
+    Name = "base-vpc-${local.environment}"
+    Environment = local.environment
   }
 }
 
 resource "aws_subnet" "public" {
-  count             = length(var.public_subnet_cidrs)
-  cidr_block        = var.public_subnet_cidrs[count.index]
+  count             = length(local.public_subnet_cidrs)
+  cidr_block        = local.public_subnet_cidrs[count.index]
   map_public_ip_on_launch = true
   availability_zone = element(data.aws_availability_zones.available.names, count.index)
   vpc_id            = aws_vpc.base.id
@@ -19,8 +20,8 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_subnet" "private" {
-  count             = length(var.private_subnet_cidrs)
-  cidr_block        = var.private_subnet_cidrs[count.index]
+  count             = length(local.private_subnet_cidrs)
+  cidr_block        = local.private_subnet_cidrs[count.index]
   vpc_id            = aws_vpc.base.id
   availability_zone = element(data.aws_availability_zones.available.names, count.index)
   tags = {
@@ -29,8 +30,8 @@ resource "aws_subnet" "private" {
 }
 
 resource "aws_subnet" "isolated" {
-  count             = length(var.isolated_subnet_cidrs)
-  cidr_block        = var.isolated_subnet_cidrs[count.index]
+  count             = length(local.isolated_subnet_cidrs)
+  cidr_block        = local.isolated_subnet_cidrs[count.index]
   vpc_id            = aws_vpc.base.id
   availability_zone = element(data.aws_availability_zones.available.names, count.index)
   tags = {
@@ -147,7 +148,7 @@ resource "aws_security_group" "base_private" {
 # Shared VPC Endpoints for common AWS services
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.base.id
-  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  service_name      = "com.amazonaws.${local.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private.id]
 
@@ -158,7 +159,7 @@ resource "aws_vpc_endpoint" "s3" {
 
 resource "aws_vpc_endpoint" "dynamodb" {
   vpc_id            = aws_vpc.base.id
-  service_name      = "com.amazonaws.${var.aws_region}.dynamodb"
+  service_name      = "com.amazonaws.${local.aws_region}.dynamodb"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private.id]
 
@@ -169,7 +170,7 @@ resource "aws_vpc_endpoint" "dynamodb" {
 
 resource "aws_vpc_endpoint" "ecr_dkr" {
   vpc_id              = aws_vpc.base.id
-  service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
+  service_name        = "com.amazonaws.${local.aws_region}.ecr.dkr"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -182,7 +183,7 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
 
 resource "aws_vpc_endpoint" "ecr_api" {
   vpc_id              = aws_vpc.base.id
-  service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
+  service_name        = "com.amazonaws.${local.aws_region}.ecr.api"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -195,7 +196,7 @@ resource "aws_vpc_endpoint" "ecr_api" {
 
 resource "aws_vpc_endpoint" "cloudwatch_logs" {
   vpc_id              = aws_vpc.base.id
-  service_name        = "com.amazonaws.${var.aws_region}.logs"
+  service_name        = "com.amazonaws.${local.aws_region}.logs"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
@@ -284,7 +285,7 @@ resource "aws_iam_role" "ecs_task_role" {
 # Centralized CloudWatch Log Groups
 resource "aws_cloudwatch_log_group" "ecs_application_logs" {
   name              = "/ecs/application"
-  retention_in_days = 7
+  retention_in_days = local.current_config.log_retention_days
 
   tags = {
     Name = "ecs-application-logs"
@@ -293,7 +294,7 @@ resource "aws_cloudwatch_log_group" "ecs_application_logs" {
 
 resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
   name              = "/vpc/flowlogs"
-  retention_in_days = 14
+  retention_in_days = local.current_config.log_retention_days
 
   tags = {
     Name = "vpc-flow-logs"
@@ -353,4 +354,101 @@ resource "aws_iam_role_policy" "vpc_flow_logs_policy" {
       }
     ]
   })
+}
+
+# SSM Parameter Store resources for CDK integration
+resource "aws_ssm_parameter" "vpc_id" {
+  name  = "/${local.environment}/base-infra/vpc-id"
+  type  = "String"
+  value = aws_vpc.base.id
+
+  tags = {
+    Name        = "VPC ID Parameter"
+    Environment = local.environment
+    Purpose     = "CDK Integration"
+  }
+}
+
+resource "aws_ssm_parameter" "public_subnet_ids" {
+  name  = "/${local.environment}/base-infra/public-subnet-ids"
+  type  = "StringList"
+  value = join(",", aws_subnet.public[*].id)
+
+  tags = {
+    Name        = "Public Subnet IDs Parameter"
+    Environment = local.environment
+    Purpose     = "CDK Integration"
+  }
+}
+
+resource "aws_ssm_parameter" "private_subnet_ids" {
+  name  = "/${local.environment}/base-infra/private-subnet-ids"
+  type  = "StringList"
+  value = join(",", aws_subnet.private[*].id)
+
+  tags = {
+    Name        = "Private Subnet IDs Parameter"
+    Environment = local.environment
+    Purpose     = "CDK Integration"
+  }
+}
+
+resource "aws_ssm_parameter" "base_default_security_group_id" {
+  name  = "/${local.environment}/base-infra/base-default-security-group-id"
+  type  = "String"
+  value = aws_security_group.base_default.id
+
+  tags = {
+    Name        = "Base Default Security Group ID Parameter"
+    Environment = local.environment
+    Purpose     = "CDK Integration"
+  }
+}
+
+resource "aws_ssm_parameter" "base_private_security_group_id" {
+  name  = "/${local.environment}/base-infra/base-private-security-group-id"
+  type  = "String"
+  value = aws_security_group.base_private.id
+
+  tags = {
+    Name        = "Base Private Security Group ID Parameter"
+    Environment = local.environment
+    Purpose     = "CDK Integration"
+  }
+}
+
+resource "aws_ssm_parameter" "ecs_task_execution_role_arn" {
+  name  = "/${local.environment}/base-infra/ecs-task-execution-role-arn"
+  type  = "String"
+  value = aws_iam_role.ecs_task_execution_role.arn
+
+  tags = {
+    Name        = "ECS Task Execution Role ARN Parameter"
+    Environment = local.environment
+    Purpose     = "CDK Integration"
+  }
+}
+
+resource "aws_ssm_parameter" "ecs_task_role_arn" {
+  name  = "/${local.environment}/base-infra/ecs-task-role-arn"
+  type  = "String"
+  value = aws_iam_role.ecs_task_role.arn
+
+  tags = {
+    Name        = "ECS Task Role ARN Parameter"
+    Environment = local.environment
+    Purpose     = "CDK Integration"
+  }
+}
+
+resource "aws_ssm_parameter" "ecs_application_log_group_name" {
+  name  = "/${local.environment}/base-infra/ecs-application-log-group-name"
+  type  = "String"
+  value = aws_cloudwatch_log_group.ecs_application_logs.name
+
+  tags = {
+    Name        = "ECS Application Log Group Name Parameter"
+    Environment = local.environment
+    Purpose     = "CDK Integration"
+  }
 }

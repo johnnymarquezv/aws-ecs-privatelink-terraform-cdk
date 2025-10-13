@@ -7,11 +7,11 @@ data "aws_region" "current" {}
 
 # S3 bucket for CloudTrail logs
 resource "aws_s3_bucket" "cloudtrail_logs" {
-  bucket = var.cloudtrail_s3_bucket_name
+  bucket = local.current_config.cloudtrail_s3_bucket_name
 
   tags = {
-    Name        = "CloudTrail-Logs-${var.environment}"
-    Environment = var.environment
+    Name        = "CloudTrail-Logs-${local.environment}"
+    Environment = local.environment
     Purpose     = "CloudTrail Logging"
   }
 }
@@ -23,14 +23,12 @@ resource "aws_s3_bucket_versioning" "cloudtrail_logs" {
   }
 }
 
-resource "aws_s3_bucket_encryption" "cloudtrail_logs" {
+resource "aws_s3_bucket_server_side_encryption_configuration" "cloudtrail_logs" {
   bucket = aws_s3_bucket.cloudtrail_logs.id
 
-  server_side_encryption_configuration {
-    rule {
-      apply_server_side_encryption_by_default {
-        sse_algorithm = "AES256"
-      }
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
     }
   }
 }
@@ -80,7 +78,7 @@ resource "aws_s3_bucket_policy" "cloudtrail_logs" {
 
 # Organization-wide CloudTrail
 resource "aws_cloudtrail" "organization_trail" {
-  name           = "organization-trail-${var.environment}"
+  name           = "organization-trail-${local.environment}"
   s3_bucket_name = aws_s3_bucket.cloudtrail_logs.bucket
 
   event_selector {
@@ -99,19 +97,19 @@ resource "aws_cloudtrail" "organization_trail" {
   }
 
   tags = {
-    Name        = "Organization-CloudTrail-${var.environment}"
-    Environment = var.environment
+    Name        = "Organization-CloudTrail-${local.environment}"
+    Environment = local.environment
     Purpose     = "Organization Audit Trail"
   }
 }
 
 # S3 bucket for AWS Config
 resource "aws_s3_bucket" "config_logs" {
-  bucket = var.config_s3_bucket_name
+  bucket = local.current_config.config_s3_bucket_name
 
   tags = {
-    Name        = "Config-Logs-${var.environment}"
-    Environment = var.environment
+    Name        = "Config-Logs-${local.environment}"
+    Environment = local.environment
     Purpose     = "AWS Config"
   }
 }
@@ -123,14 +121,12 @@ resource "aws_s3_bucket_versioning" "config_logs" {
   }
 }
 
-resource "aws_s3_bucket_encryption" "config_logs" {
+resource "aws_s3_bucket_server_side_encryption_configuration" "config_logs" {
   bucket = aws_s3_bucket.config_logs.id
 
-  server_side_encryption_configuration {
-    rule {
-      apply_server_side_encryption_by_default {
-        sse_algorithm = "AES256"
-      }
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
     }
   }
 }
@@ -146,7 +142,7 @@ resource "aws_s3_bucket_public_access_block" "config_logs" {
 
 # IAM role for AWS Config
 resource "aws_iam_role" "config_role" {
-  name = "AWSConfigRole-${var.environment}"
+  name = "AWSConfigRole-${local.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -162,8 +158,8 @@ resource "aws_iam_role" "config_role" {
   })
 
   tags = {
-    Name        = "AWSConfigRole-${var.environment}"
-    Environment = var.environment
+    Name        = "AWSConfigRole-${local.environment}"
+    Environment = local.environment
   }
 }
 
@@ -174,7 +170,7 @@ resource "aws_iam_role_policy_attachment" "config_role_policy" {
 
 # AWS Config Configuration Recorder
 resource "aws_config_configuration_recorder" "main" {
-  name     = "main-recorder-${var.environment}"
+  name     = "main-recorder-${local.environment}"
   role_arn = aws_iam_role.config_role.arn
 
   recording_group {
@@ -185,14 +181,14 @@ resource "aws_config_configuration_recorder" "main" {
 
 # AWS Config Delivery Channel
 resource "aws_config_delivery_channel" "main" {
-  name           = "main-delivery-channel-${var.environment}"
+  name           = "main-delivery-channel-${local.environment}"
   s3_bucket_name = aws_s3_bucket.config_logs.bucket
 }
 
 # GuardDuty
 resource "aws_guardduty_detector" "main" {
   enable                       = true
-  finding_publishing_frequency = var.guardduty_finding_publishing_frequency
+  finding_publishing_frequency = local.guardduty_finding_publishing_frequency
 
   datasources {
     s3_logs {
@@ -213,8 +209,8 @@ resource "aws_guardduty_detector" "main" {
   }
 
   tags = {
-    Name        = "GuardDuty-${var.environment}"
-    Environment = var.environment
+    Name        = "GuardDuty-${local.environment}"
+    Environment = local.environment
   }
 }
 
@@ -225,7 +221,7 @@ resource "aws_securityhub_account" "main" {
 
 # Enable Security Hub standards
 resource "aws_securityhub_standards_subscription" "standards" {
-  for_each      = toset(var.security_hub_standards)
+  for_each      = toset(local.security_hub_standards)
   standards_arn = "arn:aws:securityhub:::ruleset/finding-format/${each.key}/v/1.2.0"
 }
 
@@ -237,31 +233,31 @@ resource "aws_inspector2_enabler" "main" {
 
 # CloudWatch Log Group for security events
 resource "aws_cloudwatch_log_group" "security_events" {
-  name              = "/aws/security/events-${var.environment}"
+  name              = "/aws/security/events-${local.environment}"
   retention_in_days = 90
 
   tags = {
-    Name        = "Security-Events-${var.environment}"
-    Environment = var.environment
+    Name        = "Security-Events-${local.environment}"
+    Environment = local.environment
     Purpose     = "Security Event Logging"
   }
 }
 
 # CloudWatch Log Group for GuardDuty findings
 resource "aws_cloudwatch_log_group" "guardduty_findings" {
-  name              = "/aws/guardduty/findings-${var.environment}"
+  name              = "/aws/guardduty/findings-${local.environment}"
   retention_in_days = 90
 
   tags = {
-    Name        = "GuardDuty-Findings-${var.environment}"
-    Environment = var.environment
+    Name        = "GuardDuty-Findings-${local.environment}"
+    Environment = local.environment
     Purpose     = "GuardDuty Findings"
   }
 }
 
 # EventBridge rule for GuardDuty findings
 resource "aws_cloudwatch_event_rule" "guardduty_findings" {
-  name        = "guardduty-findings-${var.environment}"
+  name        = "guardduty-findings-${local.environment}"
   description = "Capture GuardDuty findings"
 
   event_pattern = jsonencode({
@@ -270,8 +266,8 @@ resource "aws_cloudwatch_event_rule" "guardduty_findings" {
   })
 
   tags = {
-    Name        = "GuardDuty-Findings-Rule-${var.environment}"
-    Environment = var.environment
+    Name        = "GuardDuty-Findings-Rule-${local.environment}"
+    Environment = local.environment
   }
 }
 
@@ -284,7 +280,7 @@ resource "aws_cloudwatch_event_target" "guardduty_findings" {
 
 # EventBridge rule for Security Hub findings
 resource "aws_cloudwatch_event_rule" "security_hub_findings" {
-  name        = "security-hub-findings-${var.environment}"
+  name        = "security-hub-findings-${local.environment}"
   description = "Capture Security Hub findings"
 
   event_pattern = jsonencode({
@@ -293,8 +289,8 @@ resource "aws_cloudwatch_event_rule" "security_hub_findings" {
   })
 
   tags = {
-    Name        = "Security-Hub-Findings-Rule-${var.environment}"
-    Environment = var.environment
+    Name        = "Security-Hub-Findings-Rule-${local.environment}"
+    Environment = local.environment
   }
 }
 
@@ -308,11 +304,11 @@ resource "aws_cloudwatch_event_target" "security_hub_findings" {
 
 # SNS topic for security alerts
 resource "aws_sns_topic" "security_alerts" {
-  name = "security-alerts-${var.environment}"
+  name = "security-alerts-${local.environment}"
 
   tags = {
-    Name        = "Security-Alerts-${var.environment}"
-    Environment = var.environment
+    Name        = "Security-Alerts-${local.environment}"
+    Environment = local.environment
     Purpose     = "Security alerting"
   }
 }
@@ -341,7 +337,7 @@ resource "aws_sns_topic_policy" "security_alerts" {
 
 # CloudWatch alarm for high severity GuardDuty findings
 resource "aws_cloudwatch_metric_alarm" "high_severity_findings" {
-  alarm_name          = "high-severity-guardduty-findings-${var.environment}"
+  alarm_name          = "high-severity-guardduty-findings-${local.environment}"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
   metric_name         = "FindingCount"
@@ -358,7 +354,7 @@ resource "aws_cloudwatch_metric_alarm" "high_severity_findings" {
   }
 
   tags = {
-    Name        = "High-Severity-GuardDuty-Findings-${var.environment}"
-    Environment = var.environment
+    Name        = "High-Severity-GuardDuty-Findings-${local.environment}"
+    Environment = local.environment
   }
 }
