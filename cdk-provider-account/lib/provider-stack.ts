@@ -5,13 +5,14 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
+import { TransitGatewayConnectivity } from './transit-gateway-connectivity';
 import { SsmParameterStore } from './ssm-parameter-store';
 
 // Hardcoded configuration constants
 const CONFIG = {
   // Account configuration
   PROVIDER_ACCOUNT_ID: '222222222222',
-  NETWORKING_ACCOUNT_ID: '111111111111',
+  CONSUMER_ACCOUNT_ID: '333333333333',
   REGION: 'us-east-1',
   
   // Service configuration
@@ -35,21 +36,33 @@ const CONFIG = {
       cpu: 256,
       desiredCount: 1,
       minCapacity: 1,
-      maxCapacity: 3
+      maxCapacity: 3,
+      vpcCidr: '10.1.0.0/16',
+      publicSubnetCidrs: ['10.1.1.0/24', '10.1.2.0/24'],
+      privateSubnetCidrs: ['10.1.3.0/24', '10.1.4.0/24'],
+      logRetentionDays: 7
     },
     staging: {
       memoryLimitMiB: 1024,
       cpu: 512,
       desiredCount: 2,
       minCapacity: 2,
-      maxCapacity: 5
+      maxCapacity: 5,
+      vpcCidr: '10.2.0.0/16',
+      publicSubnetCidrs: ['10.2.1.0/24', '10.2.2.0/24'],
+      privateSubnetCidrs: ['10.2.3.0/24', '10.2.4.0/24'],
+      logRetentionDays: 30
     },
     prod: {
       memoryLimitMiB: 2048,
       cpu: 1024,
       desiredCount: 3,
       minCapacity: 3,
-      maxCapacity: 10
+      maxCapacity: 10,
+      vpcCidr: '10.3.0.0/16',
+      publicSubnetCidrs: ['10.3.1.0/24', '10.3.2.0/24'],
+      privateSubnetCidrs: ['10.3.3.0/24', '10.3.4.0/24'],
+      logRetentionDays: 90
     }
   }
 } as const;
@@ -60,10 +73,11 @@ export interface ProviderStackProps extends cdk.StackProps {
 }
 
 export class ProviderStack extends cdk.Stack {
-  public readonly vpc: ec2.IVpc;
+  public readonly vpc: ec2.Vpc;
   public readonly cluster: ecs.Cluster;
   public readonly nlb: elbv2.NetworkLoadBalancer;
   public readonly vpcEndpointService: ec2.VpcEndpointService;
+  public readonly transitGatewayConnectivity: TransitGatewayConnectivity;
 
   constructor(scope: Construct, id: string, props: ProviderStackProps) {
     super(scope, id, props);
@@ -73,24 +87,90 @@ export class ProviderStack extends cdk.Stack {
     const serviceConfig = serviceType === 'api-service' ? CONFIG.API_SERVICE : CONFIG.USER_SERVICE;
     const envConfig = CONFIG.ENVIRONMENTS[environment];
 
-    // For now, use hardcoded values for synthesis
-    // In production, these would come from SSM Parameter Store populated by Terraform
-    const vpcId = `vpc-${environment}-${serviceType}`;
-    const publicSubnetIds = [`subnet-${environment}-${serviceType}-pub1`, `subnet-${environment}-${serviceType}-pub2`];
-    const privateSubnetIds = [`subnet-${environment}-${serviceType}-priv1`, `subnet-${environment}-${serviceType}-priv2`];
-    const baseDefaultSecurityGroupId = `sg-${environment}-${serviceType}-default`;
-    const basePrivateSecurityGroupId = `sg-${environment}-${serviceType}-private`;
-    const ecsTaskExecutionRoleArn = `arn:aws:iam::${CONFIG.PROVIDER_ACCOUNT_ID}:role/${environment}-${serviceType}-ecs-task-execution-role`;
-    const ecsTaskRoleArn = `arn:aws:iam::${CONFIG.PROVIDER_ACCOUNT_ID}:role/${environment}-${serviceType}-ecs-task-role`;
-    const ecsApplicationLogGroupName = `/${environment}/${serviceType}/ecs-application-logs`;
+    // Create VPC with all networking infrastructure
+    this.vpc = new ec2.Vpc(this, 'ProviderVpc', {
+      vpcName: `${serviceConfig.name}-${environment}-vpc`,
+      cidr: envConfig.vpcCidr,
+      maxAzs: 2,
+      enableDnsHostnames: true,
+      enableDnsSupport: true,
+      subnetConfiguration: [
+        {
+          cidrMask: 24,
+          name: 'Public',
+          subnetType: ec2.SubnetType.PUBLIC,
+        },
+        {
+          cidrMask: 24,
+          name: 'Private',
+          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+        },
+      ],
+      natGateways: 2, // High availability NAT gateways
+    });
 
-    // Import VPC from Terraform outputs
-    // Using fromVpcAttributes for local testing without AWS credentials
-    this.vpc = ec2.Vpc.fromVpcAttributes(this, 'ImportedVpc', {
-      vpcId: vpcId,
-      availabilityZones: [`${CONFIG.REGION}a`, `${CONFIG.REGION}b`],
-      publicSubnetIds: publicSubnetIds,
-      privateSubnetIds: privateSubnetIds,
+    // Create security groups
+    const vpcEndpointsSecurityGroup = new ec2.SecurityGroup(this, 'VpcEndpointsSecurityGroup', {
+      vpc: this.vpc,
+      description: 'Security group for VPC endpoints',
+      allowAllOutbound: true,
+    });
+
+    vpcEndpointsSecurityGroup.addIngressRule(
+      ec2.Peer.ipv4(this.vpc.vpcCidrBlock),
+      ec2.Port.tcp(443),
+      'HTTPS from VPC'
+    );
+
+    // Create VPC endpoints for AWS services
+    const s3Endpoint = new ec2.GatewayVpcEndpoint(this, 'S3Endpoint', {
+      vpc: this.vpc,
+      service: ec2.GatewayVpcEndpointAwsService.S3,
+    });
+
+    const dynamodbEndpoint = new ec2.GatewayVpcEndpoint(this, 'DynamoDBEndpoint', {
+      vpc: this.vpc,
+      service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+    });
+
+    const ecrDkrEndpoint = new ec2.InterfaceVpcEndpoint(this, 'EcrDkrEndpoint', {
+      vpc: this.vpc,
+      service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
+      securityGroups: [vpcEndpointsSecurityGroup],
+      privateDnsEnabled: true,
+    });
+
+    const ecrApiEndpoint = new ec2.InterfaceVpcEndpoint(this, 'EcrApiEndpoint', {
+      vpc: this.vpc,
+      service: ec2.InterfaceVpcEndpointAwsService.ECR,
+      securityGroups: [vpcEndpointsSecurityGroup],
+      privateDnsEnabled: true,
+    });
+
+    const cloudWatchLogsEndpoint = new ec2.InterfaceVpcEndpoint(this, 'CloudWatchLogsEndpoint', {
+      vpc: this.vpc,
+      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
+      securityGroups: [vpcEndpointsSecurityGroup],
+      privateDnsEnabled: true,
+    });
+
+    // Create IAM roles
+    const taskExecutionRole = new iam.Role(this, 'TaskExecutionRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
+      ],
+    });
+
+    const taskRole = new iam.Role(this, 'TaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+    });
+
+    // Create CloudWatch Log Group
+    const logGroup = new logs.LogGroup(this, 'ApplicationLogGroup', {
+      logGroupName: `/${environment}/${serviceConfig.name}/ecs-application-logs`,
+      retention: logs.RetentionDays[envConfig.logRetentionDays === 7 ? 'ONE_WEEK' : 
+                                   envConfig.logRetentionDays === 30 ? 'ONE_MONTH' : 'THREE_MONTHS'],
     });
 
     // Create ECS Cluster
@@ -100,13 +180,6 @@ export class ProviderStack extends cdk.Stack {
       containerInsights: true,
     });
 
-    // Import CloudWatch Log Group from Terraform
-    const logGroup = logs.LogGroup.fromLogGroupName(this, 'ImportedLogGroup', ecsApplicationLogGroupName);
-
-    // Import IAM roles from Terraform
-    const taskExecutionRole = iam.Role.fromRoleArn(this, 'TaskExecutionRole', ecsTaskExecutionRoleArn);
-    const taskRole = iam.Role.fromRoleArn(this, 'TaskRole', ecsTaskRoleArn);
-
     // Create application-specific security group
     const appSecurityGroup = new ec2.SecurityGroup(this, 'AppSecurityGroup', {
       vpc: this.vpc,
@@ -114,28 +187,11 @@ export class ProviderStack extends cdk.Stack {
       allowAllOutbound: true,
     });
 
-    // Import base security groups from Terraform
-    const baseDefaultSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(
-      this,
-      'BaseDefaultSecurityGroup',
-      baseDefaultSecurityGroupId
-    );
-    const basePrivateSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(
-      this,
-      'BasePrivateSecurityGroup',
-      basePrivateSecurityGroupId
-    );
-
-    // Allow traffic from base security groups
+    // Allow traffic from VPC CIDR to application port
     appSecurityGroup.addIngressRule(
-      baseDefaultSecurityGroup,
+      ec2.Peer.ipv4(this.vpc.vpcCidrBlock),
       ec2.Port.tcp(serviceConfig.port),
-      'Allow traffic from base default security group'
-    );
-    appSecurityGroup.addIngressRule(
-      basePrivateSecurityGroup,
-      ec2.Port.tcp(serviceConfig.port),
-      'Allow traffic from base private security group'
+      'Allow traffic from VPC'
     );
 
     // Create task definition
@@ -217,7 +273,7 @@ export class ProviderStack extends cdk.Stack {
       vpcEndpointServiceLoadBalancers: [this.nlb],
       acceptanceRequired: true,
       allowedPrincipals: [
-        new iam.ArnPrincipal(`arn:aws:iam::${CONFIG.NETWORKING_ACCOUNT_ID}:root`)
+        new iam.ArnPrincipal(`arn:aws:iam::${CONFIG.CONSUMER_ACCOUNT_ID}:root`)
       ],
     });
 
@@ -235,10 +291,39 @@ export class ProviderStack extends cdk.Stack {
       exportName: `${serviceConfig.name}-${environment}-nlb-dns-name`,
     });
 
+    // Output VPC ID for cross-account connectivity
+    new cdk.CfnOutput(this, 'VpcId', {
+      value: this.vpc.vpcId,
+      description: 'VPC ID for cross-account peering',
+      exportName: `${serviceConfig.name}-${environment}-vpc-id`,
+    });
+
+    // Output VPC CIDR for cross-account connectivity
+    new cdk.CfnOutput(this, 'VpcCidr', {
+      value: this.vpc.vpcCidrBlock,
+      description: 'VPC CIDR block for cross-account peering',
+      exportName: `${serviceConfig.name}-${environment}-vpc-cidr`,
+    });
+
+    // Create Transit Gateway connectivity
+    const ssmParams = new SsmParameterStore(this, 'SsmParameters', {
+      environment: environment
+    });
+
+    this.transitGatewayConnectivity = new TransitGatewayConnectivity(this, 'TransitGatewayConnectivity', {
+      vpc: this.vpc,
+      transitGatewayId: ssmParams.transitGatewayId,
+      transitGatewayRouteTableId: ssmParams.transitGatewayRouteTableId,
+      environment: environment,
+      accountType: 'provider',
+      serviceName: serviceConfig.name
+    });
+
     // Add environment-specific tags
     cdk.Tags.of(this).add('Environment', environment);
     cdk.Tags.of(this).add('Service', serviceConfig.name);
     cdk.Tags.of(this).add('ServiceType', 'Provider');
     cdk.Tags.of(this).add('ManagedBy', 'CDK');
+    cdk.Tags.of(this).add('Account', 'Provider');
   }
 }

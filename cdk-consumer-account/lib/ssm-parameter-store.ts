@@ -7,79 +7,42 @@ export interface SsmParameterStoreProps {
 }
 
 export class SsmParameterStore extends Construct {
-  public readonly vpcId: string;
-  public readonly publicSubnetIds: string[];
-  public readonly privateSubnetIds: string[];
-  public readonly baseDefaultSecurityGroupId: string;
-  public readonly basePrivateSecurityGroupId: string;
-  public readonly ecsTaskExecutionRoleArn: string;
-  public readonly ecsTaskRoleArn: string;
-  public readonly ecsApplicationLogGroupName: string;
-  public readonly artifactsS3Bucket: string;
-  public readonly ecrRepositoryUrl: string;
-  public readonly codebuildProjectName: string;
-  public readonly monitoringRoleArn: string;
-  public readonly cicdRoleArn: string;
+  public readonly transitGatewayId: string;
+  public readonly transitGatewayRouteTableId: string;
+  public readonly crossAccountRoleArn: string;
+  public readonly networkingAccountId: string;
+  public readonly microservicesAccounts: string[];
+  public readonly environment: string;
 
   constructor(scope: Construct, id: string, props: SsmParameterStoreProps) {
     super(scope, id);
 
     const { environment, region } = props;
 
-    // Base Infrastructure Parameters
-    this.vpcId = ssm.StringParameter.valueFromLookup(
+    // Connectivity Parameters from Networking Account
+    this.transitGatewayId = ssm.StringParameter.valueFromLookup(
       this,
-      `/${environment}/base-infra/vpc-id`
+      `/${environment}/connectivity/transit-gateway-id`
     );
-    this.publicSubnetIds = ssm.StringParameter.valueFromLookup(
+    this.transitGatewayRouteTableId = ssm.StringParameter.valueFromLookup(
       this,
-      `/${environment}/base-infra/public-subnet-ids`
+      `/${environment}/connectivity/transit-gateway-route-table-id`
+    );
+    this.crossAccountRoleArn = ssm.StringParameter.valueFromLookup(
+      this,
+      `/${environment}/connectivity/cross-account-role-arn`
+    );
+    this.networkingAccountId = ssm.StringParameter.valueFromLookup(
+      this,
+      `/${environment}/connectivity/networking-account-id`
+    );
+    this.microservicesAccounts = ssm.StringParameter.valueFromLookup(
+      this,
+      `/${environment}/connectivity/microservices-accounts`
     ).split(',');
-    this.privateSubnetIds = ssm.StringParameter.valueFromLookup(
+    this.environment = ssm.StringParameter.valueFromLookup(
       this,
-      `/${environment}/base-infra/private-subnet-ids`
-    ).split(',');
-    this.baseDefaultSecurityGroupId = ssm.StringParameter.valueFromLookup(
-      this,
-      `/${environment}/base-infra/base-default-security-group-id`
-    );
-    this.basePrivateSecurityGroupId = ssm.StringParameter.valueFromLookup(
-      this,
-      `/${environment}/base-infra/base-private-security-group-id`
-    );
-    this.ecsTaskExecutionRoleArn = ssm.StringParameter.valueFromLookup(
-      this,
-      `/${environment}/base-infra/ecs-task-execution-role-arn`
-    );
-    this.ecsTaskRoleArn = ssm.StringParameter.valueFromLookup(
-      this,
-      `/${environment}/base-infra/ecs-task-role-arn`
-    );
-    this.ecsApplicationLogGroupName = ssm.StringParameter.valueFromLookup(
-      this,
-      `/${environment}/base-infra/ecs-application-log-group-name`
-    );
-
-    // Shared Services Parameters
-    this.artifactsS3Bucket = ssm.StringParameter.valueFromLookup(
-      this,
-      `/${environment}/shared-services/artifacts-s3-bucket`
-    );
-    this.ecrRepositoryUrl = ssm.StringParameter.valueFromLookup(
-      this,
-      `/${environment}/shared-services/ecr-repository-url`
-    );
-    this.codebuildProjectName = ssm.StringParameter.valueFromLookup(
-      this,
-      `/${environment}/shared-services/codebuild-project-name`
-    );
-    this.monitoringRoleArn = ssm.StringParameter.valueFromLookup(
-      this,
-      `/${environment}/shared-services/monitoring-role-arn`
-    );
-    this.cicdRoleArn = ssm.StringParameter.valueFromLookup(
-      this,
-      `/${environment}/shared-services/cicd-role-arn`
+      `/${environment}/connectivity/environment`
     );
   }
 }

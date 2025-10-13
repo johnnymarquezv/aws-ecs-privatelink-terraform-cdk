@@ -1,6 +1,6 @@
 # Multi-Account Microservices with AWS ECS, PrivateLink, Terraform, and CDK
 
-A secure, scalable multi-account microservices architecture using AWS ECS, PrivateLink, Terraform, and AWS CDK (TypeScript).
+A secure, scalable multi-account microservices architecture using AWS ECS, PrivateLink, Terraform, and AWS CDK (TypeScript). Each account maintains its own complete infrastructure with cross-account connectivity via Transit Gateway.
 
 ## Table of Contents
 
@@ -16,13 +16,13 @@ A secure, scalable multi-account microservices architecture using AWS ECS, Priva
 ```mermaid
 graph TB
     subgraph "Networking Account (Terraform)"
-        VPC[VPC with Public/Private Subnets]
-        SG[Security Groups]
-        IAM[IAM Roles]
-        CW[CloudWatch Logs]
-        VPC --> SG
-        VPC --> IAM
-        VPC --> CW
+        TGW[Transit Gateway]
+        RAM[Resource Access Manager]
+        IAM_ROLES[Cross-Account IAM Roles]
+        MONITORING[Centralized Monitoring]
+        TGW --> RAM
+        TGW --> IAM_ROLES
+        TGW --> MONITORING
     end
     
     subgraph "Security Account (Terraform)"
@@ -40,44 +40,50 @@ graph TB
     end
     
     subgraph "Provider Account (CDK)"
+        VPC_PROV[Provider VPC]
         ECS_PROV[ECS Cluster]
         NLB[Network Load Balancer]
         VES[VPC Endpoint Service]
         API_SVC[API Service]
         USER_SVC[User Service]
+        TGW_ATT_PROV[TGW Attachment]
+        VPC_PROV --> ECS_PROV
         ECS_PROV --> NLB
         NLB --> VES
         ECS_PROV --> API_SVC
         ECS_PROV --> USER_SVC
+        VPC_PROV --> TGW_ATT_PROV
     end
     
     subgraph "Consumer Account (CDK)"
+        VPC_CONS[Consumer VPC]
         ECS_CONS[ECS Cluster]
         VEP[VPC Endpoints]
         API_CONS[API Consumer]
         USER_CONS[User Consumer]
+        TGW_ATT_CONS[TGW Attachment]
+        VPC_CONS --> ECS_CONS
         ECS_CONS --> VEP
         ECS_CONS --> API_CONS
         ECS_CONS --> USER_CONS
+        VPC_CONS --> TGW_ATT_CONS
     end
     
     VES -.->|PrivateLink| VEP
-    VPC -.->|Shared via RAM| ECS_PROV
-    VPC -.->|Shared via RAM| ECS_CONS
-    SG -.->|Shared via RAM| ECS_PROV
-    SG -.->|Shared via RAM| ECS_CONS
-    IAM -.->|Cross-account| ECS_PROV
-    IAM -.->|Cross-account| ECS_CONS
+    TGW -.->|Cross-Account| TGW_ATT_PROV
+    TGW -.->|Cross-Account| TGW_ATT_CONS
+    TGW_ATT_PROV -.->|Route Propagation| TGW
+    TGW_ATT_CONS -.->|Route Propagation| TGW
 ```
 
 ### **Terraform (Networking Infrastructure)**
-- **Base Infrastructure**: VPC, subnets, security groups, IAM roles, CloudWatch logs
+- **Networking Account**: Transit Gateway, cross-account IAM roles, centralized monitoring
 - **Security Account**: CloudTrail, Config, S3 buckets, cross-account policies
 - **Shared Services**: CodeBuild, monitoring roles, shared resources
 
 ### **CDK (Application Infrastructure)**
-- **Provider Accounts**: ECS clusters, services, Network Load Balancers, VPC Endpoint Services
-- **Consumer Accounts**: ECS clusters, Interface VPC endpoints for consuming external services
+- **Provider Accounts**: Complete VPC infrastructure, ECS clusters, services, Network Load Balancers, VPC Endpoint Services, Transit Gateway attachments
+- **Consumer Accounts**: Complete VPC infrastructure, ECS clusters, Interface VPC endpoints for consuming external services, Transit Gateway attachments
 
 ## Project Structure
 
