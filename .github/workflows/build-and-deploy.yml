@@ -106,7 +106,7 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: deploy-dev
     if: github.ref == 'refs/heads/main'
     environment: 
       name: staging
@@ -151,7 +151,7 @@ jobs:
   deploy-prod:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: deploy-staging
     if: github.ref == 'refs/heads/main'
     environment: 
       name: production
