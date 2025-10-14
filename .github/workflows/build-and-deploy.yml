@@ -78,8 +78,8 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets[format('{0}_AWS_ACCESS_KEY_ID', matrix.account)] }}
-        aws-secret-access-key: ${{ secrets[format('{0}_AWS_SECRET_ACCESS_KEY', matrix.account)] }}
+        aws-access-key-id: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_ACCESS_KEY_ID || secrets.CONSUMER_AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_SECRET_ACCESS_KEY || secrets.CONSUMER_AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Setup Node.js
@@ -123,8 +123,8 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets[format('{0}_AWS_ACCESS_KEY_ID', matrix.account)] }}
-        aws-secret-access-key: ${{ secrets[format('{0}_AWS_SECRET_ACCESS_KEY', matrix.account)] }}
+        aws-access-key-id: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_ACCESS_KEY_ID || secrets.CONSUMER_AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_SECRET_ACCESS_KEY || secrets.CONSUMER_AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Setup Node.js
@@ -168,8 +168,8 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets[format('{0}_AWS_ACCESS_KEY_ID', matrix.account)] }}
-        aws-secret-access-key: ${{ secrets[format('{0}_AWS_SECRET_ACCESS_KEY', matrix.account)] }}
+        aws-access-key-id: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_ACCESS_KEY_ID || secrets.CONSUMER_AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_SECRET_ACCESS_KEY || secrets.CONSUMER_AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Setup Node.js
