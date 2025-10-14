@@ -3,16 +3,8 @@ name: Build and Deploy Microservice
 on:
   push:
     branches: [ main, develop ]
-    paths:
-      - 'microservice-repo/**'
-      - 'cdk-provider-account/**'
-      - 'cdk-consumer-account/**'
   pull_request:
     branches: [ main ]
-    paths:
-      - 'microservice-repo/**'
-      - 'cdk-provider-account/**'
-      - 'cdk-consumer-account/**'
 
 env:
   AWS_REGION: us-east-1
