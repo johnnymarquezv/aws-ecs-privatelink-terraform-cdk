@@ -10,6 +10,9 @@ A secure, scalable multi-account microservices architecture using AWS ECS, Priva
 - [Quick Start](#quick-start)
 - [Deployment](#deployment)
 - [Configuration](#configuration)
+- [Microservice Development](#microservice-development)
+- [Monitoring](#monitoring)
+- [Troubleshooting](#troubleshooting)
 
 ## Architecture
 
@@ -76,12 +79,14 @@ graph TB
     TGW_ATT_CONS -.->|Route Propagation| TGW
 ```
 
-### **Terraform (Base Infrastructure)**
+### Infrastructure Components
+
+**Terraform (Base Infrastructure)**
 - **Base Infrastructure Account**: Transit Gateway, cross-account IAM roles, centralized monitoring
 - **Security Account**: CloudTrail, Config, S3 buckets, cross-account policies
 - **Shared Services**: CodeBuild, monitoring roles, shared resources
 
-### **CDK (Application Infrastructure)**
+**CDK (Application Infrastructure)**
 - **Provider Accounts**: Complete VPC infrastructure, ECS clusters, services, Network Load Balancers, VPC Endpoint Services, Transit Gateway attachments
 - **Consumer Accounts**: Complete VPC infrastructure, ECS clusters, Interface VPC endpoints for consuming external services, Transit Gateway attachments
 
@@ -103,6 +108,8 @@ graph TB
 - **AWS CDK CLI** (`npm install -g aws-cdk`)
 - **AWS CLI** configured with appropriate credentials
 - **Docker** (for microservice development)
+
+## Quick Start
 
 ### AWS Profile Setup
 
@@ -166,6 +173,39 @@ output = json
 region = us-east-1
 output = json
 EOF
+```
+
+**Then edit the files with your actual credentials:**
+```bash
+nano ~/.aws/credentials
+nano ~/.aws/config
+```
+
+#### Getting AWS Credentials
+
+**For IAM Users:**
+1. Go to AWS Console → IAM → Users
+2. Select your user → Security credentials tab
+3. Create access key → Command Line Interface (CLI)
+4. Download the credentials or copy them
+
+**For AWS SSO:**
+```bash
+# Configure SSO profiles
+aws configure sso --profile base-infra
+aws configure sso --profile security-account
+aws configure sso --profile shared-services-account
+aws configure sso --profile provider-account
+aws configure sso --profile consumer-account
+```
+
+**For Temporary Credentials:**
+If using temporary credentials (like from AWS SSO), add the session token:
+```ini
+[base-infra]
+aws_access_key_id = ASIA...
+aws_secret_access_key = ...
+aws_session_token = IQoJb3JpZ2luX2VjEJH...
 ```
 
 #### Security Best Practices
@@ -276,6 +316,13 @@ cdk deploy --profile different-profile
 After setting up the profiles, test them to ensure they're working correctly:
 
 ```bash
+# Test each profile
+aws sts get-caller-identity --profile base-infra
+aws sts get-caller-identity --profile security-account
+aws sts get-caller-identity --profile shared-services-account
+aws sts get-caller-identity --profile provider-account
+aws sts get-caller-identity --profile consumer-account
+
 # List all configured profiles
 aws configure list-profiles
 
@@ -330,20 +377,6 @@ aws configure sso --profile consumer-account
 
 **Verify Profile Configuration:**
 ```bash
-# Test each profile
-aws sts get-caller-identity --profile base-infra
-aws sts get-caller-identity --profile security-account
-aws sts get-caller-identity --profile shared-services-account
-aws sts get-caller-identity --profile provider-account
-aws sts get-caller-identity --profile consumer-account
-```
-
-## Quick Start
-
-### 1. Local Testing
-
-**Verify Profile Configuration:**
-```bash
 # Test that profiles are working
 aws sts get-caller-identity --profile base-infra
 aws sts get-caller-identity --profile provider-account
@@ -369,7 +402,9 @@ cd ../cdk-consumer-account
 npx cdk synth
 ```
 
-### 2. Deploy Infrastructure
+## Deployment
+
+### Deploy Infrastructure
 
 The microservice is automatically built and pushed to GitHub Container Registry (ghcr.io) via GitHub Actions when changes are made to the `microservice-repo/` directory.
 
@@ -435,7 +470,7 @@ npx cdk ls
 npx cdk deploy api-consumer-dev-consumer-stack user-consumer-dev-consumer-stack
 ```
 
-### 4. Test Connectivity
+### Test Connectivity
 
 After deployment, test the cross-account connectivity:
 
@@ -481,7 +516,7 @@ aws ec2 describe-vpc-endpoint-services --profile provider-account --filters "Nam
 aws ec2 describe-vpc-endpoint-connections --profile provider-account
 ```
 
-## Deployment
+## Configuration
 
 ### Terraform Backend Configuration
 
@@ -515,8 +550,6 @@ terraform {
 4. **Provider CDK** (`cdk-provider-account`)
 5. **Consumer CDK** (`cdk-consumer-account`)
 
-## Configuration
-
 ### Terraform Configuration
 
 Each Terraform module uses `locals` blocks for configuration:
@@ -547,6 +580,57 @@ locals {
 ```
 
 ### CDK Configuration
+
+CDK applications now support automatic profile detection like Terraform. The configuration is flexible and can be overridden at multiple levels:
+
+#### Configuration Hierarchy (Highest to Lowest Priority)
+
+1. **CDK Context** (`--context` flags)
+2. **Environment Variables**
+3. **AWS Profiles** (`AWS_PROFILE`)
+4. **Default AWS Credential Chain** (IAM roles, instance profiles, etc.)
+5. **Default Values** (hardcoded in code)
+
+#### Configuration Methods
+
+Both Terraform and CDK use AWS profiles for multi-account deployment:
+
+**Terraform with Hardcoded Profiles:**
+```bash
+# No export needed - profile is hardcoded in provider.tf
+terraform init
+terraform apply
+```
+
+**CDK with Hardcoded Profiles:**
+```bash
+# No export needed - profile is hardcoded in app.ts
+cd cdk-provider-account
+
+# 1. Bootstrap CDK (one-time setup per account/region)
+npx cdk bootstrap
+
+# 2. List available stacks
+npx cdk ls
+
+# 3. Deploy specific stacks
+npx cdk deploy api-service-dev-provider-stack user-service-dev-provider-stack
+```
+
+**Multi-Account Deployment Workflow:**
+```bash
+# Deploy to Provider Account (profile hardcoded)
+cd cdk-provider-account
+npx cdk bootstrap
+npx cdk deploy --all
+
+# Deploy to Consumer Account (profile hardcoded)
+cd ../cdk-consumer-account
+npx cdk bootstrap
+npx cdk deploy --all
+```
+
+#### Configuration Structure
 
 The CDK apps use a flexible configuration system in `lib/config.ts`:
 
@@ -667,7 +751,7 @@ curl http://localhost:8000/metrics
 - **Cross-Service Communication**: HTTP-based service-to-service calls
 - **Error Handling**: Comprehensive error handling and HTTP status codes
 
-## Monitoring and Observability
+## Monitoring
 
 ### CloudWatch Logs
 
