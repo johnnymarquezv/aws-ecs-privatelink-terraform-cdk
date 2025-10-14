@@ -121,163 +121,8 @@ resource "aws_ecr_lifecycle_policy" "microservice" {
 }
 
 
-# IAM role for CodeBuild
-resource "aws_iam_role" "codebuild_role" {
-  name = "CodeBuildRole-${local.environment}"
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "codebuild.amazonaws.com"
-        }
-      }
-    ]
-  })
 
-  tags = {
-    Name        = "CodeBuildRole-${local.environment}"
-    Environment = local.environment
-  }
-}
-
-# IAM policy for CodeBuild
-resource "aws_iam_role_policy" "codebuild_policy" {
-  name = "CodeBuildPolicy-${local.environment}"
-  role = aws_iam_role.codebuild_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:*:*:*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetBucketAcl",
-          "s3:GetBucketLocation",
-          "s3:GetObject",
-          "s3:GetObjectVersion",
-          "s3:PutObject"
-        ]
-        Resource = [
-          aws_s3_bucket.artifacts.arn,
-          "${aws_s3_bucket.artifacts.arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "ecr:GetAuthorizationToken",
-          "ecr:PutImage",
-          "ecr:InitiateLayerUpload",
-          "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
-        Resource = aws_secretsmanager_secret.github_token.arn
-      }
-    ]
-  })
-}
-
-# Secrets Manager secret for GitHub token
-resource "aws_secretsmanager_secret" "github_token" {
-  name        = local.github_token_secret_name
-  description = "GitHub personal access token for CodeBuild"
-
-  tags = {
-    Name        = "GitHub-Token-${local.environment}"
-    Environment = local.environment
-    Purpose     = "CI/CD"
-  }
-}
-
-# CodeBuild project for microservice
-resource "aws_codebuild_project" "microservice" {
-  name          = "microservice-build-${local.environment}"
-  description   = "Build project for microservice"
-  service_role  = aws_iam_role.codebuild_role.arn
-
-  artifacts {
-    type = "CODEPIPELINE"
-  }
-
-  environment {
-    compute_type                = local.codebuild_compute_type
-    image                      = "aws/codebuild/standard:7.0"
-    type                       = "LINUX_CONTAINER"
-    image_pull_credentials_type = "CODEBUILD"
-    privileged_mode            = true
-
-    environment_variable {
-      name  = "AWS_DEFAULT_REGION"
-      value = local.aws_region
-    }
-
-    environment_variable {
-      name  = "AWS_ACCOUNT_ID"
-      value = data.aws_caller_identity.current.account_id
-    }
-
-    environment_variable {
-      name  = "IMAGE_REPO_NAME"
-      value = local.container_registry_name
-    }
-
-    environment_variable {
-      name  = "IMAGE_TAG"
-      value = "latest"
-    }
-
-    environment_variable {
-      name  = "ENVIRONMENT"
-      value = local.environment
-    }
-  }
-
-  source {
-    type = "CODEPIPELINE"
-    buildspec = "buildspec.yml"
-  }
-
-  tags = {
-    Name        = "Microservice-Build-${local.environment}"
-    Environment = local.environment
-    Purpose     = "CI/CD"
-  }
-}
-
-# CloudWatch Log Group for CodeBuild
-resource "aws_cloudwatch_log_group" "codebuild" {
-  name              = "/aws/codebuild/microservice-build-${local.environment}"
-  retention_in_days = local.monitoring_retention_days
-
-  tags = {
-    Name        = "CodeBuild-Logs-${local.environment}"
-    Environment = local.environment
-    Purpose     = "CI/CD Logging"
-  }
-}
 
 # CloudWatch Log Group for application monitoring
 resource "aws_cloudwatch_log_group" "application_monitoring" {
@@ -337,31 +182,6 @@ resource "aws_sns_topic" "deployment_notifications" {
   }
 }
 
-# EventBridge rule for CodeBuild state changes
-resource "aws_cloudwatch_event_rule" "codebuild_state_change" {
-  name        = "codebuild-state-change-${local.environment}"
-  description = "Capture CodeBuild state changes"
-
-  event_pattern = jsonencode({
-    source      = ["aws.codebuild"]
-    detail-type = ["CodeBuild Build State Change"]
-    detail = {
-      build-status = ["SUCCEEDED", "FAILED", "STOPPED"]
-    }
-  })
-
-  tags = {
-    Name        = "CodeBuild-State-Change-${local.environment}"
-    Environment = local.environment
-  }
-}
-
-# EventBridge target for CodeBuild notifications
-resource "aws_cloudwatch_event_target" "codebuild_notifications" {
-  rule      = aws_cloudwatch_event_rule.codebuild_state_change.name
-  target_id = "CodeBuildNotificationsTarget"
-  arn       = aws_sns_topic.deployment_notifications.arn
-}
 
 # CloudWatch dashboard for shared services
 resource "aws_cloudwatch_dashboard" "shared_services" {
@@ -378,15 +198,13 @@ resource "aws_cloudwatch_dashboard" "shared_services" {
 
         properties = {
           metrics = [
-            ["AWS/CodeBuild", "Builds", "ProjectName", aws_codebuild_project.microservice.name],
-            [".", "Duration", ".", "."],
-            [".", "SucceededBuilds", ".", "."],
-            [".", "FailedBuilds", ".", "."]
+            ["AWS/ECR", "RepositoryPullCount"],
+            [".", "RepositoryPushCount"]
           ]
           period = 300
           stat   = "Sum"
           region = local.aws_region
-          title  = "CodeBuild Metrics"
+          title  = "ECR Metrics"
         }
       },
       {
@@ -397,9 +215,9 @@ resource "aws_cloudwatch_dashboard" "shared_services" {
         height = 6
 
         properties = {
-          query   = "SOURCE '/aws/codebuild/microservice-build-${local.environment}' | fields @timestamp, @message | sort @timestamp desc | limit 100"
+          query   = "SOURCE '/aws/monitoring/applications-${local.environment}' | fields @timestamp, @message | sort @timestamp desc | limit 100"
           region  = local.aws_region
-          title   = "Recent CodeBuild Logs"
+          title   = "Recent Application Logs"
         }
       }
     ]

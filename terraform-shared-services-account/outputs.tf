@@ -22,22 +22,7 @@ output "ecr_repository_arn" {
   value       = aws_ecr_repository.microservice.arn
 }
 
-# CodeBuild
-output "codebuild_project_name" {
-  description = "Name of the CodeBuild project"
-  value       = aws_codebuild_project.microservice.name
-}
-
-output "codebuild_project_arn" {
-  description = "ARN of the CodeBuild project"
-  value       = aws_codebuild_project.microservice.arn
-}
-
 # IAM Roles
-output "codebuild_role_arn" {
-  description = "ARN of the CodeBuild IAM role"
-  value       = aws_iam_role.codebuild_role.arn
-}
 
 # Cross-account roles
 output "monitoring_role_arn" {
@@ -72,10 +57,6 @@ output "application_monitoring_log_group" {
   value       = aws_cloudwatch_log_group.application_monitoring.name
 }
 
-output "codebuild_log_group" {
-  description = "CloudWatch log group for CodeBuild logs"
-  value       = aws_cloudwatch_log_group.codebuild.name
-}
 
 output "dashboard_url" {
   description = "CloudWatch dashboard URL"

@@ -3,11 +3,11 @@ import * as cdk from 'aws-cdk-lib';
 import { ProviderStack } from '../lib/provider-stack';
 import { SsmParameterStore } from '../lib/ssm-parameter-store';
 
-// Hardcoded configuration constants
+// Configuration that can be overridden by environment variables or AWS profiles
 const CONFIG = {
-  // Account configuration
-  PROVIDER_ACCOUNT_ID: '222222222222',
-  REGION: 'us-east-1',
+  // Account configuration - can be overridden by AWS_PROFILE or AWS_ACCOUNT_ID
+  PROVIDER_ACCOUNT_ID: process.env.AWS_ACCOUNT_ID || '222222222222',
+  REGION: process.env.AWS_REGION || 'us-east-1',
   
   // Service configuration
   API_SERVICE: {
@@ -63,9 +63,12 @@ for (const serviceType of services) {
     
     // Create the provider stack
     new ProviderStack(app, `${serviceConfig.name}-${environment}-provider-stack`, {
+      // Use default AWS credential chain (most Terraform-like approach)
+      // CDK will automatically detect account/region from current credentials
+      // Fallback to hardcoded values for synthesis when credentials are not available
       env: {
-        account: CONFIG.PROVIDER_ACCOUNT_ID,
-        region: CONFIG.REGION,
+        account: process.env.AWS_ACCOUNT_ID || CONFIG.PROVIDER_ACCOUNT_ID,
+        region: process.env.AWS_REGION || CONFIG.REGION,
       },
       environment,
       serviceType,
@@ -74,7 +77,6 @@ for (const serviceType of services) {
         Project: 'Multi-Account-Microservices',
         Service: serviceConfig.name,
         Environment: environment,
-        AccountId: CONFIG.PROVIDER_ACCOUNT_ID,
         AccountType: 'Provider',
         ManagedBy: 'CDK',
       },

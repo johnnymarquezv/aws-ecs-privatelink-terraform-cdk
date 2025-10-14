@@ -59,25 +59,8 @@ export class TransitGatewayConnectivity extends Construct {
     });
 
     // Add routes to Transit Gateway for cross-account communication
-    // Provider account routes (for API and User services)
-    if (accountType === 'provider') {
-      // Route to Consumer account VPCs
-      new ec2.CfnTransitGatewayRoute(this, 'RouteToConsumer', {
-        transitGatewayRouteTableId: transitGatewayRouteTableId,
-        destinationCidrBlock: '10.1.0.0/8', // Consumer VPC CIDR range
-        transitGatewayAttachmentId: this.transitGatewayAttachment.ref
-      });
-    }
-
-    // Consumer account routes (for consuming services)
-    if (accountType === 'consumer') {
-      // Route to Provider account VPCs
-      new ec2.CfnTransitGatewayRoute(this, 'RouteToProvider', {
-        transitGatewayRouteTableId: transitGatewayRouteTableId,
-        destinationCidrBlock: '10.0.0.0/8', // Provider VPC CIDR range
-        transitGatewayAttachmentId: this.transitGatewayAttachment.ref
-      });
-    }
+    // Note: Routes are managed by the networking account, not individual accounts
+    // This ensures centralized route management and avoids conflicts
 
     // Output Transit Gateway attachment ID
     new cdk.CfnOutput(this, 'TransitGatewayAttachmentId', {

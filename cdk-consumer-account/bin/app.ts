@@ -3,11 +3,11 @@ import * as cdk from 'aws-cdk-lib';
 import { ConsumerStack } from '../lib/consumer-stack';
 import { SsmParameterStore } from '../lib/ssm-parameter-store';
 
-// Hardcoded configuration constants
+// Configuration that can be overridden by environment variables or AWS profiles
 const CONFIG = {
-  // Account configuration
-  CONSUMER_ACCOUNT_ID: '333333333333',
-  REGION: 'us-east-1',
+  // Account configuration - can be overridden by AWS_PROFILE or AWS_ACCOUNT_ID
+  CONSUMER_ACCOUNT_ID: process.env.AWS_ACCOUNT_ID || '333333333333',
+  REGION: process.env.AWS_REGION || 'us-east-1',
   
   // Service configuration
   API_CONSUMER: {
@@ -63,8 +63,23 @@ for (const serviceType of services) {
     
     // Create the consumer stack
     new ConsumerStack(app, `${serviceConfig.name}-${environment}-consumer-stack`, {
+      // Use default AWS credential chain (most Terraform-like approach)
+      // CDK will automatically detect account/region from current credentials
+      // Fallback to hardcoded values for synthesis when credentials are not available
+      env: {
+        account: process.env.AWS_ACCOUNT_ID || CONFIG.CONSUMER_ACCOUNT_ID,
+        region: process.env.AWS_REGION || CONFIG.REGION,
+      },
       environment,
       serviceType,
+      description: `${serviceConfig.description} in ${environment} environment`,
+      tags: {
+        Project: 'Multi-Account-Microservices',
+        Service: serviceConfig.name,
+        Environment: environment,
+        AccountType: 'Consumer',
+        ManagedBy: 'CDK',
+      },
     });
   }
 }

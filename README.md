@@ -104,46 +104,253 @@ graph TB
 - **AWS CLI** configured with appropriate credentials
 - **Docker** (for microservice development)
 
+### AWS Profile Setup
+
+Configure AWS profiles for each account. Both Terraform and CDK will automatically use these profiles:
+
+### GitHub Actions Setup
+
+For automated CI/CD, configure the following secrets in your GitHub repository:
+
+**Required Secrets:**
+- `AWS_ACCESS_KEY_ID` - AWS access key for shared services account
+- `AWS_SECRET_ACCESS_KEY` - AWS secret key for shared services account
+- `NETWORKING_AWS_ACCESS_KEY_ID` - AWS access key for networking account
+- `NETWORKING_AWS_SECRET_ACCESS_KEY` - AWS secret key for networking account
+- `SHARED_SERVICES_AWS_ACCESS_KEY_ID` - AWS access key for shared services account
+- `SHARED_SERVICES_AWS_SECRET_ACCESS_KEY` - AWS secret key for shared services account
+- `PROVIDER_AWS_ACCESS_KEY_ID` - AWS access key for provider account
+- `PROVIDER_AWS_SECRET_ACCESS_KEY` - AWS secret key for provider account
+- `CONSUMER_AWS_ACCESS_KEY_ID` - AWS access key for consumer account
+- `CONSUMER_AWS_SECRET_ACCESS_KEY` - AWS secret key for consumer account
+
+**GitHub Actions Workflow:**
+The repository includes a GitHub Actions workflow (`.github/workflows/build-and-deploy.yml`) that:
+1. **Builds and pushes** the microservice Docker image to ECR on every push to `main` or `develop`
+2. **Deploys infrastructure** to all accounts when changes are pushed to `main`
+3. **Uses matrix strategy** to deploy to multiple accounts in parallel
+
+```bash
+# Configure AWS profiles
+aws configure --profile networking-account
+aws configure --profile security-account
+aws configure --profile shared-services-account
+aws configure --profile provider-account
+aws configure --profile consumer-account
+
+# Or use AWS SSO
+aws configure sso --profile networking-account
+aws configure sso --profile security-account
+aws configure sso --profile shared-services-account
+aws configure sso --profile provider-account
+aws configure sso --profile consumer-account
+```
+
+**Verify Profile Configuration:**
+```bash
+# Test each profile
+aws sts get-caller-identity --profile networking-account
+aws sts get-caller-identity --profile security-account
+aws sts get-caller-identity --profile shared-services-account
+aws sts get-caller-identity --profile provider-account
+aws sts get-caller-identity --profile consumer-account
+```
+
+Your `~/.aws/config` should look like:
+```ini
+[profile networking-account]
+region = us-east-1
+output = json
+
+[profile security-account]
+region = us-east-1
+output = json
+
+[profile shared-services-account]
+region = us-east-1
+output = json
+
+[profile provider-account]
+region = us-east-1
+output = json
+
+[profile consumer-account]
+region = us-east-1
+output = json
+```
+
+And `~/.aws/credentials`:
+```ini
+[networking-account]
+aws_access_key_id = AKIA...
+aws_secret_access_key = ...
+
+[security-account]
+aws_access_key_id = AKIA...
+aws_secret_access_key = ...
+
+[shared-services-account]
+aws_access_key_id = AKIA...
+aws_secret_access_key = ...
+
+[provider-account]
+aws_access_key_id = AKIA...
+aws_secret_access_key = ...
+
+[consumer-account]
+aws_access_key_id = AKIA...
+aws_secret_access_key = ...
+```
+
 ## Quick Start
 
 ### 1. Local Testing
 
+**Verify Profile Configuration:**
 ```bash
-# Test different environments
+# Test that profiles are working
+aws sts get-caller-identity --profile networking-account
+aws sts get-caller-identity --profile provider-account
+aws sts get-caller-identity --profile consumer-account
+```
+
+**Test Terraform with Profiles:**
+```bash
+# Test different environments with profiles
+export AWS_PROFILE=networking-account
 cd terraform-base-infra
 terraform workspace select dev && terraform plan
 terraform workspace select staging && terraform plan
 terraform workspace select prod && terraform plan
+```
 
-# Test CDK synthesis
-cd ../cdk-provider-account
+**Test CDK with Profiles:**
+```bash
+# Test CDK synthesis with profiles
+export AWS_PROFILE=provider-account
+cd cdk-provider-account
 npx cdk synth
+
+export AWS_PROFILE=consumer-account
 cd ../cdk-consumer-account
 npx cdk synth
 ```
 
 ### 2. Deploy Infrastructure
 
+The microservice is automatically built and pushed to ECR via GitHub Actions when changes are made to the `microservice-repo/` directory.
+
+Deploy the infrastructure in the following order:
+
+#### Step 1: Deploy Base Infrastructure (Networking Account)
 ```bash
-# Deploy Terraform infrastructure
 cd terraform-base-infra
+export AWS_PROFILE=networking-account
 terraform workspace select dev
+terraform init
 terraform apply
+```
 
+#### Step 2: Deploy Security Account
+```bash
 cd ../terraform-security-account
+export AWS_PROFILE=security-account
 terraform workspace select dev
+terraform init
 terraform apply
+```
 
+#### Step 3: Deploy Shared Services Account
+```bash
 cd ../terraform-shared-services-account
+export AWS_PROFILE=shared-services-account
 terraform workspace select dev
+terraform init
 terraform apply
+```
 
-# Deploy CDK applications
+#### Step 4: Deploy Provider Account (CDK)
+
+Deploy using AWS profiles for account isolation:
+
+```bash
 cd ../cdk-provider-account
-npx cdk deploy --all
+export AWS_PROFILE=provider-account
+npm install
 
+# 1. Bootstrap CDK (one-time setup per account/region)
+npx cdk bootstrap
+
+# 2. List available stacks
+npx cdk ls
+
+# 3. Deploy specific stacks (example: deploy dev environment)
+npx cdk deploy api-service-dev-provider-stack user-service-dev-provider-stack
+```
+
+#### Step 5: Deploy Consumer Account (CDK)
+
+Deploy using AWS profiles for account isolation:
+
+```bash
 cd ../cdk-consumer-account
-npx cdk deploy --all
+export AWS_PROFILE=consumer-account
+npm install
+
+# 1. Bootstrap CDK (one-time setup per account/region)
+npx cdk bootstrap
+
+# 2. List available stacks
+npx cdk ls
+
+# 3. Deploy specific stacks (example: deploy dev environment)
+npx cdk deploy api-consumer-dev-consumer-stack user-consumer-dev-consumer-stack
+```
+
+### 4. Test Connectivity
+
+After deployment, test the cross-account connectivity:
+
+#### Check ECS Services
+```bash
+# Check provider service status
+aws ecs describe-services --cluster api-service-dev-cluster --services api-service-dev-service --profile provider-account
+
+# Check consumer service status
+aws ecs describe-services --cluster api-consumer-dev-cluster --services api-consumer-dev-service --profile consumer-account
+```
+
+#### Test Service Health
+```bash
+# Get provider service endpoint
+PROVIDER_IP=$(aws ecs list-tasks --cluster api-service-dev-cluster --service-name api-service-dev-service --profile provider-account --query 'taskArns[0]' --output text | xargs -I {} aws ecs describe-tasks --cluster api-service-dev-cluster --tasks {} --profile provider-account --query 'tasks[0].attachments[0].details[?name==`privateIPv4Address`].value' --output text)
+
+# Test provider health
+curl -f http://$PROVIDER_IP:8080/health
+
+# Get consumer service endpoint
+CONSUMER_IP=$(aws ecs list-tasks --cluster api-consumer-dev-cluster --service-name api-consumer-dev-service --profile consumer-account --query 'taskArns[0]' --output text | xargs -I {} aws ecs describe-tasks --cluster api-consumer-dev-cluster --tasks {} --profile consumer-account --query 'tasks[0].attachments[0].details[?name==`privateIPv4Address`].value' --output text)
+
+# Test consumer health
+curl -f http://$CONSUMER_IP:80/health
+```
+
+#### Test Cross-Account Communication
+```bash
+# Test service discovery
+curl http://$CONSUMER_IP:80/services
+
+# Test service-to-service call
+curl -X POST http://$CONSUMER_IP:80/call/api-service -H "Content-Type: application/json" -d '{}'
+```
+
+#### Check VPC Endpoint Service
+```bash
+# List VPC Endpoint Services
+aws ec2 describe-vpc-endpoint-services --profile provider-account --filters "Name=service-name,Values=com.amazonaws.vpce.us-east-1.*"
+
+# Check VPC Endpoint connections
+aws ec2 describe-vpc-endpoint-connections --profile provider-account
 ```
 
 ## Deployment
@@ -213,20 +420,96 @@ locals {
 
 ### CDK Configuration
 
-CDK applications use hardcoded constants in `lib/*-stack.ts`:
+CDK applications now support automatic profile detection like Terraform. The configuration is flexible and can be overridden at multiple levels:
+
+#### Configuration Hierarchy (Highest to Lowest Priority)
+
+1. **CDK Context** (`--context` flags)
+2. **Environment Variables**
+3. **AWS Profiles** (`AWS_PROFILE`)
+4. **Default AWS Credential Chain** (IAM roles, instance profiles, etc.)
+5. **Default Values** (hardcoded in code)
+
+#### Configuration Methods
+
+Both Terraform and CDK use AWS profiles for multi-account deployment:
+
+**Terraform with Profiles:**
+```bash
+# Set profile and deploy
+export AWS_PROFILE=networking-account
+terraform init
+terraform apply
+```
+
+**CDK with Profiles:**
+```bash
+# Set profile and deploy
+export AWS_PROFILE=provider-account
+
+# 1. Bootstrap CDK (one-time setup per account/region)
+npx cdk bootstrap
+
+# 2. List available stacks
+npx cdk ls
+
+# 3. Deploy specific stacks
+npx cdk deploy api-service-dev-provider-stack user-service-dev-provider-stack
+```
+
+**Multi-Account Deployment Workflow:**
+```bash
+# Deploy to Provider Account
+export AWS_PROFILE=provider-account
+cd cdk-provider-account
+npx cdk bootstrap
+npx cdk deploy --all
+
+# Deploy to Consumer Account
+export AWS_PROFILE=consumer-account
+cd ../cdk-consumer-account
+npx cdk bootstrap
+npx cdk deploy --all
+```
+
+#### Configuration Structure
+
+The CDK apps use a flexible configuration system in `lib/config.ts`:
 
 ```typescript
-const CONFIG = {
-  PROVIDER_ACCOUNT_ID: '222222222222',
-  CONSUMER_ACCOUNT_ID: '333333333333',
-  REGION: 'us-east-1',
-  
-  API_SERVICE: {
+// Account configurations - can be overridden
+export const ACCOUNTS = {
+  provider: {
+    accountId: process.env.AWS_ACCOUNT_ID || '222222222222',
+    region: process.env.AWS_REGION || 'us-east-1',
+    profile: process.env.AWS_PROFILE
+  },
+  consumer: {
+    accountId: process.env.CONSUMER_ACCOUNT_ID || '333333333333',
+    region: process.env.AWS_REGION || 'us-east-1',
+    profile: process.env.CONSUMER_AWS_PROFILE
+  }
+};
+
+// Service configurations
+export const SERVICES = {
+  'api-service': {
     name: 'api-service',
     port: 8080,
-    image: 'nginx:alpine'
+    image: 'microservice',
+    description: 'API Service Provider'
   }
-} as const;
+};
+
+// Environment configurations
+export const ENVIRONMENTS = {
+  dev: {
+    memoryLimitMiB: 512,
+    cpu: 256,
+    desiredCount: 1,
+    vpcCidr: '10.1.0.0/16'
+  }
+};
 ```
 
 ### Environment Variables
@@ -235,14 +518,235 @@ For production deployment, update account IDs and region in the configuration fi
 
 ## Microservice Development
 
-The `microservice-repo/` contains a sample FastAPI application:
+### FastAPI Microservice
 
+The `microservice-repo/` contains a production-ready FastAPI application that serves as both provider and consumer services.
+
+#### Local Development
 ```bash
 cd microservice-repo
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+#### API Endpoints
+
+The microservice provides the following endpoints:
+
+- `GET /` - Service information and status
+- `GET /health` - Health check endpoint
+- `GET /ready` - Readiness check with dependency validation
+- `GET /services` - List discovered consumer services
+- `POST /call/{service_name}` - Call another microservice
+- `GET /status` - Detailed service status and metrics
+- `GET /metrics` - Prometheus-compatible metrics
+
+#### Environment Variables
+
+The microservice is configured via environment variables:
+
+```bash
+SERVICE_NAME=microservice          # Service identifier
+SERVICE_PORT=8000                  # Port to listen on
+SERVICE_VERSION=1.0.0              # Service version
+LOG_LEVEL=INFO                     # Logging level
+ENABLE_METRICS=true                # Enable metrics endpoint
+RATE_LIMIT=100                     # Requests per minute per IP
+CONSUMER_SERVICES=[...]            # JSON array of consumer services
+```
+
+#### Docker Build
+
+```bash
+cd microservice-repo
+docker build -t microservice:latest .
+docker run -p 8000:8000 microservice:latest
+```
+
+#### Testing the Microservice
+
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Service information
+curl http://localhost:8000/
+
+# Service status
+curl http://localhost:8000/status
+
+# Metrics
+curl http://localhost:8000/metrics
+```
+
+### Microservice Features
+
+- **FastAPI Framework**: Modern, fast web framework with automatic API documentation
+- **Health Checks**: Built-in health and readiness endpoints for ECS and load balancers
+- **Service Discovery**: Dynamic service discovery and communication
+- **Metrics**: Prometheus-compatible metrics for monitoring
+- **Rate Limiting**: Built-in rate limiting middleware
+- **Structured Logging**: JSON-formatted logs for CloudWatch
+- **Security**: Non-root user, minimal base image, input validation
+- **Cross-Service Communication**: HTTP-based service-to-service calls
+- **Error Handling**: Comprehensive error handling and HTTP status codes
+
+## Monitoring and Observability
+
+### CloudWatch Logs
+
+Monitor application logs in CloudWatch:
+
+```bash
+# Provider service logs
+aws logs describe-log-groups --log-group-name-prefix "/dev/api-service" --profile provider-account
+
+# Consumer service logs
+aws logs describe-log-groups --log-group-name-prefix "/dev/api-consumer" --profile consumer-account
+
+# View recent logs
+aws logs tail /dev/api-service/ecs-application-logs --follow --profile provider-account
+```
+
+### ECS Service Monitoring
+
+```bash
+# Check service status
+aws ecs describe-services --cluster api-service-dev-cluster --services api-service-dev-service --profile provider-account
+
+# Check task health
+aws ecs describe-tasks --cluster api-service-dev-cluster --tasks $(aws ecs list-tasks --cluster api-service-dev-cluster --service-name api-service-dev-service --profile provider-account --query 'taskArns[0]' --output text) --profile provider-account
+
+# View service events
+aws ecs describe-services --cluster api-service-dev-cluster --services api-service-dev-service --profile provider-account --query 'services[0].events'
+```
+
+### VPC Endpoint Service Monitoring
+
+```bash
+# Check VPC Endpoint Service status
+aws ec2 describe-vpc-endpoint-services --profile provider-account --filters "Name=service-name,Values=com.amazonaws.vpce.us-east-1.*"
+
+# Check VPC Endpoint connections
+aws ec2 describe-vpc-endpoint-connections --profile provider-account
+
+# Check Transit Gateway attachments
+aws ec2 describe-transit-gateway-attachments --profile provider-account
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### 1. ECS Service Not Starting
+
+**Symptoms**: Service shows as "PENDING" or tasks keep stopping
+
+**Debug Steps**:
+```bash
+# Check task definition
+aws ecs describe-task-definition --task-definition api-service-dev-task-definition --profile provider-account
+
+# Check task logs
+aws logs get-log-events --log-group-name /dev/api-service/ecs-application-logs --log-stream-name $(aws logs describe-log-streams --log-group-name /dev/api-service/ecs-application-logs --order-by LastEventTime --descending --max-items 1 --profile provider-account --query 'logStreams[0].logStreamName' --output text) --profile provider-account
+
+# Check ECS service events
+aws ecs describe-services --cluster api-service-dev-cluster --services api-service-dev-service --profile provider-account --query 'services[0].events'
+```
+
+**Common Causes**:
+- Invalid ECR image URI
+- Missing IAM permissions
+- Health check failures
+- Resource constraints
+
+#### 2. Cross-Account Communication Failing
+
+**Symptoms**: Consumer cannot reach provider service
+
+**Debug Steps**:
+```bash
+# Check VPC Endpoint Service acceptance
+aws ec2 describe-vpc-endpoint-connections --profile provider-account --filters "Name=vpc-endpoint-state,Values=pending-acceptance"
+
+# Check Transit Gateway route propagation
+aws ec2 describe-transit-gateway-route-tables --profile provider-account
+aws ec2 search-transit-gateway-routes --transit-gateway-route-table-id tgw-rtb-xxx --filters "Name=route-search.exact-match,Values=10.11.0.0/16" --profile provider-account
+
+# Check security group rules
+aws ec2 describe-security-groups --group-ids $(aws ec2 describe-security-groups --filters "Name=group-name,Values=*api-service*" --profile provider-account --query 'SecurityGroups[0].GroupId' --output text) --profile provider-account
+```
+
+**Common Causes**:
+- VPC Endpoint Service not accepted
+- Transit Gateway routes not propagated
+- Security group rules blocking traffic
+- Network ACL restrictions
+
+#### 3. ECR Image Pull Errors
+
+**Symptoms**: ECS tasks fail with "CannotPullContainerError"
+
+**Debug Steps**:
+```bash
+# Check ECR repository exists
+aws ecr describe-repositories --repository-names microservice-dev --profile shared-services-account
+
+# Check ECS task execution role permissions
+aws iam get-role --role-name ecsTaskExecutionRole --profile provider-account
+
+# Check ECR login
+aws ecr get-login-password --region us-east-1 --profile shared-services-account | docker login --username AWS --password-stdin 111111111111.dkr.ecr.us-east-1.amazonaws.com
+```
+
+**Common Causes**:
+- ECR repository doesn't exist
+- ECS task execution role lacks ECR permissions
+- Image doesn't exist in ECR
+- Cross-account ECR access not configured
+
+#### 4. Health Check Failures
+
+**Symptoms**: ECS tasks keep restarting due to health check failures
+
+**Debug Steps**:
+```bash
+# Test health endpoint directly
+curl -f http://$SERVICE_IP:8080/health
+
+# Check load balancer target health
+aws elbv2 describe-target-health --target-group-arn $(aws elbv2 describe-target-groups --names api-service-dev-target-group --profile provider-account --query 'TargetGroups[0].TargetGroupArn' --output text) --profile provider-account
+
+# Check ECS service health check configuration
+aws ecs describe-services --cluster api-service-dev-cluster --services api-service-dev-service --profile provider-account --query 'services[0].healthCheckGracePeriodSeconds'
+```
+
+**Common Causes**:
+- Application not listening on correct port
+- Health check path incorrect
+- Application startup time exceeds health check grace period
+- Network connectivity issues
+
+### Debug Commands
+
+#### Get Service Endpoints
+```bash
+# Get provider service IP
+aws ecs list-tasks --cluster api-service-dev-cluster --service-name api-service-dev-service --profile provider-account --query 'taskArns[0]' --output text | xargs -I {} aws ecs describe-tasks --cluster api-service-dev-cluster --tasks {} --profile provider-account --query 'tasks[0].attachments[0].details[?name==`privateIPv4Address`].value' --output text
+
+# Get consumer service IP
+aws ecs list-tasks --cluster api-consumer-dev-cluster --service-name api-consumer-dev-service --profile consumer-account --query 'taskArns[0]' --output text | xargs -I {} aws ecs describe-tasks --cluster api-consumer-dev-cluster --tasks {} --profile consumer-account --query 'tasks[0].attachments[0].details[?name==`privateIPv4Address`].value' --output text
+```
+
+#### Test Network Connectivity
+```bash
+# Test from consumer to provider (replace IPs with actual values)
+aws ec2-instance-connect send-ssh-public-key --instance-id $CONSUMER_INSTANCE_ID --availability-zone us-east-1a --instance-os-user ec2-user --ssh-public-key file://~/.ssh/id_rsa.pub --profile consumer-account
+
+# SSH to consumer instance and test connectivity
+ssh ec2-user@$CONSUMER_IP "curl -f http://$PROVIDER_IP:8080/health"
 ```
 
 ## Security Considerations
@@ -251,10 +755,16 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - **IAM Roles**: Least privilege access with cross-account role assumptions
 - **Encryption**: All data encrypted in transit and at rest
 - **Monitoring**: CloudTrail, Config, and CloudWatch for comprehensive logging
+- **Container Security**: Non-root user, minimal base image, image scanning
+- **VPC Endpoint Security**: Explicit acceptance required for connections
+- **Transit Gateway**: Network ACLs and security groups apply to cross-account traffic
 
 ## Resources
 
 - [AWS ECS Documentation](https://docs.aws.amazon.com/ecs/)
 - [AWS PrivateLink Documentation](https://docs.aws.amazon.com/vpc/latest/privatelink/)
+- [AWS Transit Gateway Documentation](https://docs.aws.amazon.com/vpc/latest/tgw/)
 - [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/latest)
 - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
+- [FastAPI Documentation](https://fastapi.tiangolo.com/)
+- [Docker Documentation](https://docs.docker.com/)

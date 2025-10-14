@@ -4,6 +4,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { TransitGatewayConnectivity } from './transit-gateway-connectivity';
 import { SsmParameterStore } from './ssm-parameter-store';
@@ -19,13 +20,13 @@ const CONFIG = {
   API_SERVICE: {
     name: 'api-service',
     port: 8080,
-    image: 'nginx:alpine',
+    image: 'microservice', // Will be replaced with ECR URL
     description: 'API Service Provider'
   },
   USER_SERVICE: {
     name: 'user-service',
     port: 3000,
-    image: 'nginx:alpine',
+    image: 'microservice', // Will be replaced with ECR URL
     description: 'User Service Provider'
   },
   
@@ -77,7 +78,7 @@ export class ProviderStack extends cdk.Stack {
   public readonly cluster: ecs.Cluster;
   public readonly nlb: elbv2.NetworkLoadBalancer;
   public readonly vpcEndpointService: ec2.VpcEndpointService;
-  public readonly transitGatewayConnectivity: TransitGatewayConnectivity;
+  public readonly transitGatewayConnectivity?: TransitGatewayConnectivity;
 
   constructor(scope: Construct, id: string, props: ProviderStackProps) {
     super(scope, id, props);
@@ -91,7 +92,7 @@ export class ProviderStack extends cdk.Stack {
     this.vpc = new ec2.Vpc(this, 'ProviderVpc', {
       vpcName: `${serviceConfig.name}-${environment}-vpc`,
       cidr: envConfig.vpcCidr,
-      maxAzs: 2,
+      availabilityZones: [`${CONFIG.REGION}a`, `${CONFIG.REGION}b`],
       enableDnsHostnames: true,
       enableDnsSupport: true,
       subnetConfiguration: [
@@ -202,9 +203,13 @@ export class ProviderStack extends cdk.Stack {
       taskRole: taskRole,
     });
 
+    // Get ECR repository URL from SSM Parameter Store
+    // For synthesis, use hardcoded value. During deployment, this will be resolved from SSM
+    const ecrRepositoryUrl = `111111111111.dkr.ecr.us-east-1.amazonaws.com/microservice-${environment}`;
+
     // Add container to task definition
     const container = taskDefinition.addContainer('Container', {
-      image: ecs.ContainerImage.fromRegistry(serviceConfig.image),
+      image: ecs.ContainerImage.fromRegistry(`${ecrRepositoryUrl}:latest`),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: serviceConfig.name,
         logGroup: logGroup,
@@ -212,8 +217,12 @@ export class ProviderStack extends cdk.Stack {
       environment: {
         SERVICE_NAME: serviceConfig.name,
         ENVIRONMENT: environment,
-        PORT: serviceConfig.port.toString(),
-        SERVICE_DESCRIPTION: serviceConfig.description,
+        SERVICE_PORT: serviceConfig.port.toString(),
+        SERVICE_VERSION: '1.0.0',
+        LOG_LEVEL: 'INFO',
+        ENABLE_METRICS: 'true',
+        RATE_LIMIT: '100',
+        CONSUMER_SERVICES: JSON.stringify([]), // No consumer services for provider
       },
     });
 

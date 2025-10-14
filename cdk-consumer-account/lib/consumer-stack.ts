@@ -3,6 +3,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { TransitGatewayConnectivity } from './transit-gateway-connectivity';
 import { SsmParameterStore } from './ssm-parameter-store';
@@ -18,13 +19,13 @@ const CONFIG = {
   API_CONSUMER: {
     name: 'api-consumer',
     port: 80,
-    image: 'nginx:alpine',
+    image: 'microservice', // Will be replaced with ECR URL
     description: 'API Consumer Service'
   },
   USER_CONSUMER: {
     name: 'user-consumer',
     port: 80,
-    image: 'nginx:alpine',
+    image: 'microservice', // Will be replaced with ECR URL
     description: 'User Consumer Service'
   },
   
@@ -105,7 +106,7 @@ export class ConsumerStack extends cdk.Stack {
     this.vpc = new ec2.Vpc(this, 'ConsumerVpc', {
       vpcName: `${serviceConfig.name}-${environment}-vpc`,
       cidr: envConfig.vpcCidr,
-      maxAzs: 2,
+      availabilityZones: [`${CONFIG.REGION}a`, `${CONFIG.REGION}b`],
       enableDnsHostnames: true,
       enableDnsSupport: true,
       subnetConfiguration: [
@@ -216,9 +217,13 @@ export class ConsumerStack extends cdk.Stack {
       taskRole: taskRole,
     });
 
+    // Get ECR repository URL from SSM Parameter Store
+    // For synthesis, use hardcoded value. During deployment, this will be resolved from SSM
+    const ecrRepositoryUrl = `111111111111.dkr.ecr.us-east-1.amazonaws.com/microservice-${environment}`;
+
     // Add container to task definition
     const container = taskDefinition.addContainer('Container', {
-      image: ecs.ContainerImage.fromRegistry(serviceConfig.image),
+      image: ecs.ContainerImage.fromRegistry(`${ecrRepositoryUrl}:latest`),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: serviceConfig.name,
         logGroup: logGroup,
@@ -226,8 +231,19 @@ export class ConsumerStack extends cdk.Stack {
       environment: {
         SERVICE_NAME: serviceConfig.name,
         ENVIRONMENT: environment,
-        PORT: serviceConfig.port.toString(),
-        SERVICE_DESCRIPTION: serviceConfig.description,
+        SERVICE_PORT: serviceConfig.port.toString(),
+        SERVICE_VERSION: '1.0.0',
+        LOG_LEVEL: 'INFO',
+        ENABLE_METRICS: 'true',
+        RATE_LIMIT: '100',
+        CONSUMER_SERVICES: JSON.stringify([
+          {
+            name: 'api-service',
+            endpoint: 'api-service-dev-nlb-dns-name', // This will be resolved via service discovery
+            port: 8080,
+            timeout: 30
+          }
+        ]),
       },
     });
 
