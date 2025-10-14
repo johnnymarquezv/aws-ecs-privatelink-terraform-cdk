@@ -18,7 +18,7 @@ terraform {
 
 provider "aws" {
   region  = local.aws_region
-  profile = "default"  # Hardcoded profile for shared services account
+  profile = "shared-services-account"  # Hardcoded profile for shared services account
   
   default_tags {
     tags = {

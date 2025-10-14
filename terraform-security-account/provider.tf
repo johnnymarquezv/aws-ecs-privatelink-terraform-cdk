@@ -18,7 +18,7 @@ terraform {
 
 provider "aws" {
   region  = local.aws_region
-  profile = "default"  # Hardcoded profile for security account
+  profile = "security-account"  # Hardcoded profile for security account
   
   default_tags {
     tags = {
