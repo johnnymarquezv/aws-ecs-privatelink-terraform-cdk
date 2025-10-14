@@ -15,7 +15,7 @@ A secure, scalable multi-account microservices architecture using AWS ECS, Priva
 
 ```mermaid
 graph TB
-    subgraph "Networking Account (Terraform)"
+    subgraph "Base Infrastructure Account (Terraform)"
         TGW[Transit Gateway]
         RAM[Resource Access Manager]
         IAM_ROLES[Cross-Account IAM Roles]
@@ -76,8 +76,8 @@ graph TB
     TGW_ATT_CONS -.->|Route Propagation| TGW
 ```
 
-### **Terraform (Networking Infrastructure)**
-- **Networking Account**: Transit Gateway, cross-account IAM roles, centralized monitoring
+### **Terraform (Base Infrastructure)**
+- **Base Infrastructure Account**: Transit Gateway, cross-account IAM roles, centralized monitoring
 - **Security Account**: CloudTrail, Config, S3 buckets, cross-account policies
 - **Shared Services**: CodeBuild, monitoring roles, shared resources
 
@@ -108,59 +108,45 @@ graph TB
 
 Configure AWS profiles for each account. Both Terraform and CDK will automatically use these profiles:
 
-### GitHub Actions Setup
+#### AWS Credentials Configuration
 
-For automated CI/CD, configure the following secrets in your GitHub repository:
-
-**Required Secrets:**
-- `AWS_ACCESS_KEY_ID` - AWS access key for shared services account
-- `AWS_SECRET_ACCESS_KEY` - AWS secret key for shared services account
-- `NETWORKING_AWS_ACCESS_KEY_ID` - AWS access key for networking account
-- `NETWORKING_AWS_SECRET_ACCESS_KEY` - AWS secret key for networking account
-- `SHARED_SERVICES_AWS_ACCESS_KEY_ID` - AWS access key for shared services account
-- `SHARED_SERVICES_AWS_SECRET_ACCESS_KEY` - AWS secret key for shared services account
-- `PROVIDER_AWS_ACCESS_KEY_ID` - AWS access key for provider account
-- `PROVIDER_AWS_SECRET_ACCESS_KEY` - AWS secret key for provider account
-- `CONSUMER_AWS_ACCESS_KEY_ID` - AWS access key for consumer account
-- `CONSUMER_AWS_SECRET_ACCESS_KEY` - AWS secret key for consumer account
-
-**GitHub Actions Workflow:**
-The repository includes a GitHub Actions workflow (`.github/workflows/build-and-deploy.yml`) that:
-1. **Builds and pushes** the microservice Docker image to GitHub Container Registry (ghcr.io) on every push
-2. **Deploys to Development** automatically on push to `main` branch
-3. **Deploys to Staging/Production** with manual approval gates (GitHub Environments)
-4. **Uses matrix strategy** to deploy to provider and consumer accounts in parallel
-5. **Container Registry**: `ghcr.io/johnnymarquezv/aws-ecs-privatelink-terraform-cdk/microservice`
+**Quick Setup - Single Command:**
 
 ```bash
-# Configure AWS profiles
-aws configure --profile networking-account
-aws configure --profile security-account
-aws configure --profile shared-services-account
-aws configure --profile provider-account
-aws configure --profile consumer-account
+# Create AWS credentials file with all required profiles
+cat > ~/.aws/credentials << 'EOF'
+[default]
+aws_access_key_id = YOUR_DEFAULT_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_DEFAULT_SECRET_ACCESS_KEY
 
-# Or use AWS SSO
-aws configure sso --profile networking-account
-aws configure sso --profile security-account
-aws configure sso --profile shared-services-account
-aws configure sso --profile provider-account
-aws configure sso --profile consumer-account
-```
+[base-infra]
+aws_access_key_id = YOUR_BASE_INFRA_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_BASE_INFRA_SECRET_ACCESS_KEY
 
-**Verify Profile Configuration:**
-```bash
-# Test each profile
-aws sts get-caller-identity --profile networking-account
-aws sts get-caller-identity --profile security-account
-aws sts get-caller-identity --profile shared-services-account
-aws sts get-caller-identity --profile provider-account
-aws sts get-caller-identity --profile consumer-account
-```
+[security-account]
+aws_access_key_id = YOUR_SECURITY_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_SECURITY_SECRET_ACCESS_KEY
 
-Your `~/.aws/config` should look like:
-```ini
-[profile networking-account]
+[shared-services-account]
+aws_access_key_id = YOUR_SHARED_SERVICES_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_SHARED_SERVICES_SECRET_ACCESS_KEY
+
+[provider-account]
+aws_access_key_id = YOUR_PROVIDER_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_PROVIDER_SECRET_ACCESS_KEY
+
+[consumer-account]
+aws_access_key_id = YOUR_CONSUMER_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_CONSUMER_SECRET_ACCESS_KEY
+EOF
+
+# Create AWS config file
+cat > ~/.aws/config << 'EOF'
+[default]
+region = us-east-1
+output = json
+
+[profile base-infra]
 region = us-east-1
 output = json
 
@@ -179,29 +165,177 @@ output = json
 [profile consumer-account]
 region = us-east-1
 output = json
+EOF
 ```
 
-And `~/.aws/credentials`:
-```ini
-[networking-account]
-aws_access_key_id = AKIA...
-aws_secret_access_key = ...
+#### Security Best Practices
 
-[security-account]
-aws_access_key_id = AKIA...
-aws_secret_access_key = ...
+1. **Use IAM Roles**: Prefer IAM roles over access keys when possible
+2. **Rotate Credentials**: Regularly rotate access keys
+3. **Least Privilege**: Grant only necessary permissions
+4. **Use AWS SSO**: For organizations, use AWS SSO for centralized access management
+5. **Secure Storage**: Keep credentials secure and never commit them to version control
+6. **Environment Variables**: For CI/CD, use environment variables instead of files
 
-[shared-services-account]
-aws_access_key_id = AKIA...
-aws_secret_access_key = ...
+#### Hardcoded Profile Configuration
 
-[provider-account]
-aws_access_key_id = AKIA...
-aws_secret_access_key = ...
+Both **Terraform** and **CDK** applications now have **hardcoded AWS profiles** to eliminate the need for environment variable exports:
 
-[consumer-account]
-aws_access_key_id = AKIA...
-aws_secret_access_key = ...
+**Terraform Provider Configuration:**
+
+**Base Infrastructure** (`terraform-base-infra/provider.tf`):
+```hcl
+provider "aws" {
+  region  = local.aws_region
+  profile = "base-infra"  # Hardcoded profile for base infrastructure
+  # ... other configuration
+}
+```
+
+**Security Account** (`terraform-security-account/provider.tf`):
+```hcl
+provider "aws" {
+  region  = local.aws_region
+  profile = "security-account"  # Hardcoded profile for security account
+  # ... other configuration
+}
+```
+
+**Shared Services Account** (`terraform-shared-services-account/provider.tf`):
+```hcl
+provider "aws" {
+  region  = local.aws_region
+  profile = "shared-services-account"  # Hardcoded profile for shared services account
+  # ... other configuration
+}
+```
+
+**CDK Applications:**
+
+**Provider Account** (`cdk-provider-account/bin/app.ts`):
+```typescript
+// Set AWS profile for this CDK app
+process.env.AWS_PROFILE = 'provider-account'; // Replace with your actual profile name
+```
+
+**Consumer Account** (`cdk-consumer-account/bin/app.ts`):
+```typescript
+// Set AWS profile for this CDK app
+process.env.AWS_PROFILE = 'consumer-account'; // Replace with your actual profile name
+```
+
+**CDK Context Configuration** (`cdk.json`):
+```json
+{
+  "context": {
+    "aws-profile": "provider-account",  // or "consumer-account"
+    // ... other context
+  }
+}
+```
+
+#### Benefits of Hardcoded Profiles
+
+- **No exports needed**: Run `terraform apply` and `cdk deploy` directly without `export AWS_PROFILE=...`
+- **Account isolation**: Each Terraform module and CDK app automatically uses its designated profile
+- **Override capability**: Still can override with `--profile` flag if needed
+- **Clean deployment**: Simplified CI/CD and local development workflows
+
+#### Usage Examples
+
+**Terraform:**
+```bash
+# Base infrastructure - no export needed
+cd terraform-base-infra
+terraform apply  # Automatically uses 'base-infra' profile
+
+# Security account - no export needed
+cd ../terraform-security-account
+terraform apply  # Automatically uses 'security-account' profile
+
+# Override if needed
+terraform apply -var="profile=different-profile"
+```
+
+**CDK:**
+```bash
+# Provider account - no export needed
+cd cdk-provider-account
+cdk deploy  # Automatically uses 'provider-account' profile
+
+# Consumer account - no export needed  
+cd cdk-consumer-account
+cdk deploy  # Automatically uses 'consumer-account' profile
+
+# Override if needed
+cdk deploy --profile different-profile
+```
+
+#### Testing Your AWS Profiles
+
+After setting up the profiles, test them to ensure they're working correctly:
+
+```bash
+# List all configured profiles
+aws configure list-profiles
+
+# Test Terraform with profiles
+cd terraform-base-infra
+terraform plan  # Should use base-infra profile automatically
+
+# Test CDK with profiles
+cd cdk-provider-account
+npx cdk synth  # Should use provider-account profile automatically
+```
+
+### GitHub Actions Setup
+
+For automated CI/CD, configure the following secrets in your GitHub repository:
+
+**Required Secrets:**
+- `AWS_ACCESS_KEY_ID` - AWS access key for shared services account
+- `AWS_SECRET_ACCESS_KEY` - AWS secret key for shared services account
+- `BASE_INFRA_AWS_ACCESS_KEY_ID` - AWS access key for base infrastructure account
+- `BASE_INFRA_AWS_SECRET_ACCESS_KEY` - AWS secret key for base infrastructure account
+- `SHARED_SERVICES_AWS_ACCESS_KEY_ID` - AWS access key for shared services account
+- `SHARED_SERVICES_AWS_SECRET_ACCESS_KEY` - AWS secret key for shared services account
+- `PROVIDER_AWS_ACCESS_KEY_ID` - AWS access key for provider account
+- `PROVIDER_AWS_SECRET_ACCESS_KEY` - AWS secret key for provider account
+- `CONSUMER_AWS_ACCESS_KEY_ID` - AWS access key for consumer account
+- `CONSUMER_AWS_SECRET_ACCESS_KEY` - AWS secret key for consumer account
+
+**GitHub Actions Workflow:**
+The repository includes a GitHub Actions workflow (`.github/workflows/build-and-deploy.yml`) that:
+1. **Builds and pushes** the microservice Docker image to GitHub Container Registry (ghcr.io) on every push
+2. **Deploys to Development** automatically on push to `main` branch
+3. **Deploys to Staging/Production** with manual approval gates (GitHub Environments)
+4. **Uses matrix strategy** to deploy to provider and consumer accounts in parallel
+5. **Container Registry**: `ghcr.io/johnnymarquezv/aws-ecs-privatelink-terraform-cdk/microservice`
+
+```bash
+# Configure AWS profiles
+aws configure --profile base-infra
+aws configure --profile security-account
+aws configure --profile shared-services-account
+aws configure --profile provider-account
+aws configure --profile consumer-account
+
+# Or use AWS SSO
+aws configure sso --profile base-infra
+aws configure sso --profile security-account
+aws configure sso --profile shared-services-account
+aws configure sso --profile provider-account
+aws configure sso --profile consumer-account
+```
+
+**Verify Profile Configuration:**
+```bash
+# Test each profile
+aws sts get-caller-identity --profile base-infra
+aws sts get-caller-identity --profile security-account
+aws sts get-caller-identity --profile shared-services-account
+aws sts get-caller-identity --profile provider-account
+aws sts get-caller-identity --profile consumer-account
 ```
 
 ## Quick Start
@@ -211,7 +345,7 @@ aws_secret_access_key = ...
 **Verify Profile Configuration:**
 ```bash
 # Test that profiles are working
-aws sts get-caller-identity --profile networking-account
+aws sts get-caller-identity --profile base-infra
 aws sts get-caller-identity --profile provider-account
 aws sts get-caller-identity --profile consumer-account
 ```
@@ -219,7 +353,6 @@ aws sts get-caller-identity --profile consumer-account
 **Test Terraform with Profiles:**
 ```bash
 # Test different environments with profiles
-export AWS_PROFILE=networking-account
 cd terraform-base-infra
 terraform workspace select dev && terraform plan
 terraform workspace select staging && terraform plan
@@ -228,12 +361,10 @@ terraform workspace select prod && terraform plan
 
 **Test CDK with Profiles:**
 ```bash
-# Test CDK synthesis with profiles
-export AWS_PROFILE=provider-account
+# Test CDK synthesis with profiles (no export needed - profiles are hardcoded)
 cd cdk-provider-account
 npx cdk synth
 
-export AWS_PROFILE=consumer-account
 cd ../cdk-consumer-account
 npx cdk synth
 ```
@@ -244,10 +375,9 @@ The microservice is automatically built and pushed to GitHub Container Registry 
 
 Deploy the infrastructure in the following order:
 
-#### Step 1: Deploy Base Infrastructure (Networking Account)
+#### Step 1: Deploy Base Infrastructure
 ```bash
 cd terraform-base-infra
-export AWS_PROFILE=networking-account
 terraform workspace select dev
 terraform init
 terraform apply
@@ -256,7 +386,6 @@ terraform apply
 #### Step 2: Deploy Security Account
 ```bash
 cd ../terraform-security-account
-export AWS_PROFILE=security-account
 terraform workspace select dev
 terraform init
 terraform apply
@@ -265,7 +394,6 @@ terraform apply
 #### Step 3: Deploy Shared Services Account
 ```bash
 cd ../terraform-shared-services-account
-export AWS_PROFILE=shared-services-account
 terraform workspace select dev
 terraform init
 terraform apply
@@ -273,11 +401,10 @@ terraform apply
 
 #### Step 4: Deploy Provider Account (CDK)
 
-Deploy using AWS profiles for account isolation:
+Deploy using hardcoded AWS profiles (no export needed):
 
 ```bash
 cd ../cdk-provider-account
-export AWS_PROFILE=provider-account
 npm install
 
 # 1. Bootstrap CDK (one-time setup per account/region)
@@ -292,11 +419,10 @@ npx cdk deploy api-service-dev-provider-stack user-service-dev-provider-stack
 
 #### Step 5: Deploy Consumer Account (CDK)
 
-Deploy using AWS profiles for account isolation:
+Deploy using hardcoded AWS profiles (no export needed):
 
 ```bash
 cd ../cdk-consumer-account
-export AWS_PROFILE=consumer-account
 npm install
 
 # 1. Bootstrap CDK (one-time setup per account/region)
@@ -421,60 +547,6 @@ locals {
 ```
 
 ### CDK Configuration
-
-CDK applications now support automatic profile detection like Terraform. The configuration is flexible and can be overridden at multiple levels:
-
-#### Configuration Hierarchy (Highest to Lowest Priority)
-
-1. **CDK Context** (`--context` flags)
-2. **Environment Variables**
-3. **AWS Profiles** (`AWS_PROFILE`)
-4. **Default AWS Credential Chain** (IAM roles, instance profiles, etc.)
-5. **Default Values** (hardcoded in code)
-
-#### Configuration Methods
-
-Both Terraform and CDK use AWS profiles for multi-account deployment:
-
-**Terraform with Profiles:**
-```bash
-# Set profile and deploy
-export AWS_PROFILE=networking-account
-terraform init
-terraform apply
-```
-
-**CDK with Profiles:**
-```bash
-# Set profile and deploy
-export AWS_PROFILE=provider-account
-
-# 1. Bootstrap CDK (one-time setup per account/region)
-npx cdk bootstrap
-
-# 2. List available stacks
-npx cdk ls
-
-# 3. Deploy specific stacks
-npx cdk deploy api-service-dev-provider-stack user-service-dev-provider-stack
-```
-
-**Multi-Account Deployment Workflow:**
-```bash
-# Deploy to Provider Account
-export AWS_PROFILE=provider-account
-cd cdk-provider-account
-npx cdk bootstrap
-npx cdk deploy --all
-
-# Deploy to Consumer Account
-export AWS_PROFILE=consumer-account
-cd ../cdk-consumer-account
-npx cdk bootstrap
-npx cdk deploy --all
-```
-
-#### Configuration Structure
 
 The CDK apps use a flexible configuration system in `lib/config.ts`:
 

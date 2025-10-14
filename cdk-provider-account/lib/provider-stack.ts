@@ -91,7 +91,7 @@ export class ProviderStack extends cdk.Stack {
     // Create VPC with all networking infrastructure
     this.vpc = new ec2.Vpc(this, 'ProviderVpc', {
       vpcName: `${serviceConfig.name}-${environment}-vpc`,
-      cidr: envConfig.vpcCidr,
+      ipAddresses: ec2.IpAddresses.cidr(envConfig.vpcCidr),
       availabilityZones: [`${CONFIG.REGION}a`, `${CONFIG.REGION}b`],
       enableDnsHostnames: true,
       enableDnsSupport: true,

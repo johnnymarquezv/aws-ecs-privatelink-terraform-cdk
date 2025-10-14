@@ -17,7 +17,8 @@ terraform {
 }
 
 provider "aws" {
-  region = local.aws_region
+  region  = local.aws_region
+  profile = "base-infra"  # Hardcoded profile for base infrastructure
   default_tags {
     tags = {
       Project     = "Multi-Account-Microservices"

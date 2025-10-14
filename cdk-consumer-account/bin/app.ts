@@ -3,6 +3,9 @@ import * as cdk from 'aws-cdk-lib';
 import { ConsumerStack } from '../lib/consumer-stack';
 import { SsmParameterStore } from '../lib/ssm-parameter-store';
 
+// Set AWS profile for this CDK app
+process.env.AWS_PROFILE = 'default'; // Replace with your actual profile name
+
 // Configuration that can be overridden by environment variables or AWS profiles
 const CONFIG = {
   // Account configuration - can be overridden by AWS_PROFILE or AWS_ACCOUNT_ID
