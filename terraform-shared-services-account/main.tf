@@ -237,13 +237,25 @@ resource "aws_ssm_parameter" "artifacts_s3_bucket" {
   }
 }
 
-resource "aws_ssm_parameter" "ecr_repository_url" {
-  name  = "/${local.environment}/shared-services/ecr-repository-url"
+resource "aws_ssm_parameter" "github_repository" {
+  name  = "/${local.environment}/shared-services/github-repository"
   type  = "String"
-  value = aws_ecr_repository.microservice.repository_url
+  value = "johnnymarquezv/aws-ecs-privatelink-terraform-cdk"
 
   tags = {
-    Name        = "ECR Repository URL Parameter"
+    Name        = "GitHub Repository Parameter"
+    Environment = local.environment
+    Purpose     = "CDK Integration"
+  }
+}
+
+resource "aws_ssm_parameter" "container_registry_url" {
+  name  = "/${local.environment}/shared-services/container-registry-url"
+  type  = "String"
+  value = "ghcr.io/johnnymarquezv/aws-ecs-privatelink-terraform-cdk/microservice"
+
+  tags = {
+    Name        = "Container Registry URL Parameter"
     Environment = local.environment
     Purpose     = "CDK Integration"
   }

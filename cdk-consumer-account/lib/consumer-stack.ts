@@ -217,13 +217,12 @@ export class ConsumerStack extends cdk.Stack {
       taskRole: taskRole,
     });
 
-    // Get ECR repository URL from SSM Parameter Store
-    // For synthesis, use hardcoded value. During deployment, this will be resolved from SSM
-    const ecrRepositoryUrl = `111111111111.dkr.ecr.us-east-1.amazonaws.com/microservice-${environment}`;
+    // Use GitHub Container Registry for microservice images
+    const containerRegistryUrl = `ghcr.io/johnnymarquezv/aws-ecs-privatelink-terraform-cdk/microservice`;
 
     // Add container to task definition
     const container = taskDefinition.addContainer('Container', {
-      image: ecs.ContainerImage.fromRegistry(`${ecrRepositoryUrl}:latest`),
+      image: ecs.ContainerImage.fromRegistry(`${containerRegistryUrl}:${environment}`),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: serviceConfig.name,
         logGroup: logGroup,

@@ -126,9 +126,11 @@ For automated CI/CD, configure the following secrets in your GitHub repository:
 
 **GitHub Actions Workflow:**
 The repository includes a GitHub Actions workflow (`.github/workflows/build-and-deploy.yml`) that:
-1. **Builds and pushes** the microservice Docker image to ECR on every push to `main` or `develop`
-2. **Deploys infrastructure** to all accounts when changes are pushed to `main`
-3. **Uses matrix strategy** to deploy to multiple accounts in parallel
+1. **Builds and pushes** the microservice Docker image to GitHub Container Registry (ghcr.io) on every push
+2. **Deploys to Development** automatically on push to `main` branch
+3. **Deploys to Staging/Production** with manual approval gates (GitHub Environments)
+4. **Uses matrix strategy** to deploy to provider and consumer accounts in parallel
+5. **Container Registry**: `ghcr.io/johnnymarquezv/aws-ecs-privatelink-terraform-cdk/microservice`
 
 ```bash
 # Configure AWS profiles
@@ -238,7 +240,7 @@ npx cdk synth
 
 ### 2. Deploy Infrastructure
 
-The microservice is automatically built and pushed to ECR via GitHub Actions when changes are made to the `microservice-repo/` directory.
+The microservice is automatically built and pushed to GitHub Container Registry (ghcr.io) via GitHub Actions when changes are made to the `microservice-repo/` directory.
 
 Deploy the infrastructure in the following order:
 
