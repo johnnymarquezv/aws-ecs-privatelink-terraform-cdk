@@ -18,7 +18,6 @@ env:
   AWS_REGION: us-east-1
   GITHUB_REPOSITORY: johnnymarquezv/aws-ecs-privatelink-terraform-cdk
   CONTAINER_REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ env.CONTAINER_REGISTRY }}/${{ env.GITHUB_REPOSITORY }}/microservice
 
 jobs:
   build-and-push:
@@ -43,7 +42,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.IMAGE_NAME }}
+        images: ${{ env.CONTAINER_REGISTRY }}/${{ env.GITHUB_REPOSITORY }}/microservice
         tags: |
           type=ref,event=branch
           type=ref,event=pr
