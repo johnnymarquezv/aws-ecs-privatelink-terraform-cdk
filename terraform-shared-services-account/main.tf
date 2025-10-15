@@ -262,3 +262,25 @@ resource "aws_ssm_parameter" "container_registry_url" {
 }
 
 
+# Secrets Manager secret for GitHub token
+resource "aws_secretsmanager_secret" "github_token" {
+  name                    = local.github_token_secret_name
+  description             = "GitHub personal access token for CI/CD"
+  recovery_window_in_days = 7
+
+  tags = {
+    Name        = "GitHub-Token-${local.environment}"
+    Environment = local.environment
+    Purpose     = "CI/CD Authentication"
+  }
+}
+
+# Secrets Manager secret version (placeholder - actual token should be set manually)
+resource "aws_secretsmanager_secret_version" "github_token" {
+  secret_id = aws_secretsmanager_secret.github_token.id
+  secret_string = jsonencode({
+    token = "PLACEHOLDER_TOKEN_REPLACE_WITH_ACTUAL_GITHUB_TOKEN"
+  })
+}
+
+

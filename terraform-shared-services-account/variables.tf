@@ -15,7 +15,6 @@ locals {
   
   # Service configuration
   container_registry_name = "microservice"
-  codebuild_compute_type = "BUILD_GENERAL1_MEDIUM"
   github_repo_url = "https://github.com/your-org/microservice"
   github_token_secret_name = "github-token"
   monitoring_retention_days = 30

@@ -123,7 +123,6 @@ resource "aws_iam_role_policy" "monitoring_policy" {
           "logs:FilterLogEvents"
         ]
         Resource = [
-          "arn:aws:logs:*:*:log-group:/aws/codebuild/*",
           "arn:aws:logs:*:*:log-group:/ecs/application*"
         ]
       },
@@ -216,23 +215,9 @@ resource "aws_iam_role_policy" "cicd_policy" {
       {
         Effect = "Allow"
         Action = [
-          "codebuild:StartBuild",
-          "codebuild:BatchGetBuilds",
-          "codebuild:BatchGetProjects"
-        ]
-        Resource = [
-          aws_codebuild_project.microservice.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
-        ]
-        Resource = [
-          "arn:aws:logs:*:*:log-group:/aws/codebuild/*"
         ]
       }
     ]
@@ -300,14 +285,3 @@ resource "aws_ssm_parameter" "artifacts_bucket_name" {
   }
 }
 
-resource "aws_ssm_parameter" "codebuild_project_name" {
-  name  = "/shared-services/${local.environment}/codebuild-project-name"
-  type  = "String"
-  value = aws_codebuild_project.microservice.name
-
-  tags = {
-    Name        = "CodeBuild-Project-Name-${local.environment}"
-    Environment = local.environment
-    Purpose     = "Cross-account configuration"
-  }
-}

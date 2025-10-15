@@ -37,7 +37,6 @@ graph TB
     end
     
     subgraph "Shared Services Account (Terraform)"
-        CB[CodeBuild]
         MON[Monitoring Roles]
         SHARED[Shared Resources]
     end
@@ -84,7 +83,7 @@ graph TB
 **Terraform (Base Infrastructure)**
 - **Base Infrastructure Account**: Transit Gateway, cross-account IAM roles, centralized monitoring
 - **Security Account**: CloudTrail, Config, S3 buckets, cross-account policies
-- **Shared Services**: CodeBuild, monitoring roles, shared resources
+- **Shared Services**: ECR repository, S3 artifacts bucket, monitoring roles, shared resources
 
 **CDK (Application Infrastructure)**
 - **Provider Accounts**: Complete VPC infrastructure, ECS clusters, services, Network Load Balancers, VPC Endpoint Services, Transit Gateway attachments
