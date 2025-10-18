@@ -186,6 +186,17 @@ resource "aws_iam_role_policy" "cross_account_policy" {
           "iam:ListRoles"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = [
+          "arn:aws:ssm:${local.region}:${local.account_id}:parameter/${local.environment}/connectivity/*"
+        ]
       }
     ]
   })

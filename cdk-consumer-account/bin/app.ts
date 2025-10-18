@@ -1,7 +1,6 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { ConsumerStack } from '../lib/consumer-stack';
-import { SsmParameterStore } from '../lib/ssm-parameter-store';
 
 // Set AWS profile for this CDK app
 process.env.AWS_PROFILE = 'consumer-account'; // Replace with your actual profile name
