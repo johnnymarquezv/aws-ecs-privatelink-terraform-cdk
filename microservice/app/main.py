@@ -349,4 +349,4 @@ microservice_consumer_services {len(CONSUMER_SERVICES)}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=SERVICE_PORT)
+    uvicorn.run(app, host="0.0.0.0", port=SERVICE_PORT)  # nosec B104 - Containerized app needs to bind to all interfaces

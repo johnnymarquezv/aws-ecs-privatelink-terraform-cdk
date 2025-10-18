@@ -58,7 +58,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentConfig> = {
     vpcCidr: '10.12.0.0/16',
     publicSubnetCidrs: ['10.12.1.0/24', '10.12.2.0/24'],
     privateSubnetCidrs: ['10.12.3.0/24', '10.12.4.0/24'],
-    logRetentionDays: 14
+    logRetentionDays: 30
   },
   prod: {
     memoryLimitMiB: 2048,
@@ -69,7 +69,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentConfig> = {
     vpcCidr: '10.13.0.0/16',
     publicSubnetCidrs: ['10.13.1.0/24', '10.13.2.0/24'],
     privateSubnetCidrs: ['10.13.3.0/24', '10.13.4.0/24'],
-    logRetentionDays: 30
+    logRetentionDays: 90
   }
 };
 

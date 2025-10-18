@@ -4,72 +4,19 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
-import { TransitGatewayConnectivity } from './transit-gateway-connectivity';
-import { ConnectivityConfig } from './ssm-parameter-store';
+import { getServiceConfig, getEnvironmentConfig, getAccountConfig } from './config';
 
-// Hardcoded configuration constants
-const CONFIG = {
-  // Account configuration
-  CONSUMER_ACCOUNT_ID: '333333333333',
-  PROVIDER_ACCOUNT_ID: '222222222222',
-  REGION: 'us-east-1',
-  
-  // Service configuration
-  API_CONSUMER: {
-    name: 'api-consumer',
-    port: 80,
-    image: 'microservice', // Will be replaced with ECR URL
-    description: 'API Consumer Service'
+// VPC Endpoint Service IDs (hardcoded for each environment)
+// These should ideally be retrieved from SSM Parameter Store or CloudFormation exports
+const VPC_ENDPOINT_SERVICES = {
+  dev: {
+    'api-service': 'vpce-svc-1234567890abcdef0'
   },
-  
-  // Environment-specific configuration
-  ENVIRONMENTS: {
-    dev: {
-      memoryLimitMiB: 512,
-      cpu: 256,
-      desiredCount: 1,
-      minCapacity: 1,
-      maxCapacity: 3,
-      vpcCidr: '10.11.0.0/16',
-      publicSubnetCidrs: ['10.11.1.0/24', '10.11.2.0/24'],
-      privateSubnetCidrs: ['10.11.3.0/24', '10.11.4.0/24'],
-      logRetentionDays: 7
-    },
-    staging: {
-      memoryLimitMiB: 1024,
-      cpu: 512,
-      desiredCount: 2,
-      minCapacity: 2,
-      maxCapacity: 5,
-      vpcCidr: '10.12.0.0/16',
-      publicSubnetCidrs: ['10.12.1.0/24', '10.12.2.0/24'],
-      privateSubnetCidrs: ['10.12.3.0/24', '10.12.4.0/24'],
-      logRetentionDays: 30
-    },
-    prod: {
-      memoryLimitMiB: 2048,
-      cpu: 1024,
-      desiredCount: 3,
-      minCapacity: 3,
-      maxCapacity: 10,
-      vpcCidr: '10.13.0.0/16',
-      publicSubnetCidrs: ['10.13.1.0/24', '10.13.2.0/24'],
-      privateSubnetCidrs: ['10.13.3.0/24', '10.13.4.0/24'],
-      logRetentionDays: 90
-    }
+  staging: {
+    'api-service': 'vpce-svc-staging-api-abcdef0'
   },
-  
-  // VPC Endpoint Service IDs (hardcoded for each environment)
-  VPC_ENDPOINT_SERVICES: {
-    dev: {
-      'api-service': 'vpce-svc-1234567890abcdef0'
-    },
-    staging: {
-      'api-service': 'vpce-svc-staging-api-abcdef0'
-    },
-    prod: {
-      'api-service': 'vpce-svc-prod-api-abcdef0'
-    }
+  prod: {
+    'api-service': 'vpce-svc-prod-api-abcdef0'
   }
 } as const;
 
@@ -82,21 +29,21 @@ export class ConsumerStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
   public readonly cluster: ecs.Cluster;
   public readonly consumerEndpoints: ec2.VpcEndpoint[] = [];
-  public readonly transitGatewayConnectivity: TransitGatewayConnectivity;
 
   constructor(scope: Construct, id: string, props: ConsumerStackProps) {
     super(scope, id, props);
 
     const { environment, serviceType } = props;
     // Get service configuration based on service type
-    const serviceConfig = CONFIG.API_CONSUMER;
-    const envConfig = CONFIG.ENVIRONMENTS[environment];
+    const serviceConfig = getServiceConfig(serviceType);
+    const envConfig = getEnvironmentConfig(environment);
+    const accountConfig = getAccountConfig(this.node.root as cdk.App, 'consumer');
 
     // Create VPC with all networking infrastructure
     this.vpc = new ec2.Vpc(this, 'ConsumerVpc', {
       vpcName: `${serviceConfig.name}-${environment}-vpc`,
       ipAddresses: ec2.IpAddresses.cidr(envConfig.vpcCidr),
-      availabilityZones: [`${CONFIG.REGION}a`, `${CONFIG.REGION}b`],
+      availabilityZones: [`${accountConfig.region}a`, `${accountConfig.region}b`],
       enableDnsHostnames: true,
       enableDnsSupport: true,
       subnetConfiguration: [
@@ -254,7 +201,7 @@ export class ConsumerStack extends cdk.Stack {
     });
 
     // Create Interface VPC Endpoints for consuming external services
-    const endpointServices = CONFIG.VPC_ENDPOINT_SERVICES[environment];
+    const endpointServices = VPC_ENDPOINT_SERVICES[environment];
     
     // Create endpoint for API service
     if (serviceType === 'api-consumer' && endpointServices['api-service']) {
@@ -284,19 +231,7 @@ export class ConsumerStack extends cdk.Stack {
       exportName: `${serviceConfig.name}-${environment}-vpc-cidr`,
     });
 
-    // Create Transit Gateway connectivity
-    const connectivityConfig = new ConnectivityConfig(this, 'ConnectivityConfig', {
-      environment: environment
-    });
-
-    this.transitGatewayConnectivity = new TransitGatewayConnectivity(this, 'TransitGatewayConnectivity', {
-      vpc: this.vpc,
-      transitGatewayId: connectivityConfig.transitGatewayId,
-      transitGatewayRouteTableId: connectivityConfig.transitGatewayRouteTableId,
-      environment: environment,
-      accountType: 'consumer',
-      serviceName: serviceConfig.name
-    });
+    // Transit Gateway connectivity removed - managed by Terraform
 
     // Add environment-specific tags
     cdk.Tags.of(this).add('Environment', environment);

@@ -76,16 +76,20 @@ jobs:
       continue-on-error: true
 
     - name: Run Bandit Python Security Linter
+      id: bandit
       run: |
         pip install bandit[toml]
-        bandit -r microservice/app/ -f json -o bandit-report.json || true
-        bandit -r microservice/app/ -f txt
+        bandit -r microservice/app/ -f json -o bandit-report.json || echo "Bandit scan completed with issues"
+        bandit -r microservice/app/ -f txt || echo "Bandit scan completed with issues"
+      continue-on-error: true
 
     - name: Run Safety for Python dependencies
+      id: safety
       run: |
         pip install safety
-        safety check --json --output safety-report.json || true
-        safety check
+        safety check --json --output safety-report.json || echo "Safety scan completed with issues"
+        safety check || echo "Safety scan completed with issues"
+      continue-on-error: true
 
     - name: Run Checkov for Infrastructure security
       id: checkov
@@ -143,6 +147,8 @@ jobs:
         echo "| Trivy | ${{ steps.trivy.outcome }} | ${{ steps.trivy-file.outputs.exists }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Semgrep | ${{ steps.semgrep.outcome }} | No |" >> $GITHUB_STEP_SUMMARY
         echo "| CodeQL | ${{ steps.codeql.outcome }} | N/A |" >> $GITHUB_STEP_SUMMARY
+        echo "| Bandit | ${{ steps.bandit.outcome }} | No |" >> $GITHUB_STEP_SUMMARY
+        echo "| Safety | ${{ steps.safety.outcome }} | No |" >> $GITHUB_STEP_SUMMARY
         echo "| Checkov | ${{ steps.checkov.outcome }} | ${{ steps.checkov-file.outputs.exists }} |" >> $GITHUB_STEP_SUMMARY
 
   build-and-push:

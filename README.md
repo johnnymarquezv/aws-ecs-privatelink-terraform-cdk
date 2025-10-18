@@ -1373,6 +1373,178 @@ python scripts/test_databases.py --env prod --test-performance
   - **Backup Security**: Encrypted backups with cross-region replication
   - **Audit Logging**: Comprehensive database access and operation logging
 
+## Security Scanning
+
+This project includes comprehensive security scanning as part of the CI/CD pipeline to ensure code quality, dependency security, and infrastructure compliance.
+
+### Security Scan Overview
+
+The GitHub Actions workflow includes a dedicated security scan job that runs multiple security tools to analyze your codebase, dependencies, and infrastructure:
+
+#### **Security Tools Coverage**
+
+| Tool | Purpose | Coverage |
+|------|---------|----------|
+| **Trivy** | Vulnerability Scanner | Filesystem, container images, dependencies |
+| **Semgrep** | Static Analysis Security Testing (SAST) | Code patterns, secrets, OWASP Top 10 |
+| **CodeQL** | Advanced Static Analysis | Complex security vulnerabilities, data flow analysis |
+| **Bandit** | Python Security Linter | Python-specific security issues |
+| **Safety** | Python Dependency Scanner | Known Python package vulnerabilities |
+| **Checkov** | Infrastructure Security | Terraform, CloudFormation misconfigurations |
+
+### Security Scan Steps Explained
+
+#### **1. Trivy Vulnerability Scanner**
+- **Purpose**: Scans for known vulnerabilities in your codebase and dependencies
+- **What it does**: 
+  - Scans filesystem for security issues
+  - Detects CVEs, security vulnerabilities, misconfigurations
+  - Outputs results in SARIF format for GitHub Security tab
+- **Coverage**: Application code, dependencies, configuration files
+
+#### **2. Semgrep SAST (Static Application Security Testing)**
+- **Purpose**: Code analysis for security patterns and anti-patterns
+- **What it does**: 
+  - Scans for security patterns using multiple rule sets:
+    - `p/security-audit`: General security issues
+    - `p/secrets`: Hardcoded secrets detection
+    - `p/owasp-top-ten`: OWASP Top 10 vulnerabilities
+    - `p/python`: Python-specific security issues
+- **Detects**: Code vulnerabilities, hardcoded secrets, security anti-patterns
+
+#### **3. CodeQL Analysis**
+- **Purpose**: GitHub's advanced static analysis tool
+- **What it does**: Performs deep code analysis to find complex security vulnerabilities
+- **Detects**: Advanced security issues, data flow vulnerabilities, injection attacks
+- **Coverage**: Python code analysis with sophisticated pattern matching
+
+#### **4. Bandit Python Security Linter**
+- **Purpose**: Python-specific security linting
+- **What it does**: 
+  - Scans Python code in `microservice/app/` directory
+  - Generates JSON and text reports
+  - Focuses on Python security best practices
+- **Detects**: Python-specific vulnerabilities, unsafe functions, security anti-patterns
+
+#### **5. Safety for Python Dependencies**
+- **Purpose**: Scans Python dependencies for known vulnerabilities
+- **What it does**: 
+  - Checks `requirements.txt` and installed packages
+  - Generates JSON and text reports
+  - Uses Safety database of known Python package vulnerabilities
+- **Detects**: Vulnerable Python packages, outdated dependencies
+
+#### **6. Checkov Infrastructure Security**
+- **Purpose**: Infrastructure as Code (IaC) security scanning
+- **What it does**: 
+  - Scans Terraform files for security misconfigurations
+  - Scans CloudFormation templates for security issues
+  - Generates SARIF reports for both frameworks
+  - Creates minimal SARIF file if no issues found (for successful scans)
+- **Detects**: Infrastructure misconfigurations, security policy violations
+
+### Security Scan Results
+
+#### **GitHub Security Tab Integration**
+All security scan results are automatically uploaded to GitHub's Security tab where you can:
+- View detailed vulnerability reports
+- Track security issues over time
+- Set up security alerts and notifications
+- Review and dismiss false positives
+- Export security reports for compliance
+
+#### **Security Scan Summary**
+The pipeline generates a comprehensive security scan summary showing:
+- Tool execution status (success/failure)
+- SARIF file upload status
+- Overall security posture
+
+#### **Security Gates**
+The security scan includes built-in security gates:
+- **Development**: SAST, dependency security, infrastructure security
+- **Staging**: SAST, DAST, container security, dependency security, infrastructure security
+- **Production**: All scans + manual approval gates
+
+### Security Configuration
+
+The security scanning is configured in `.github/security-config.yml` with:
+- **Thresholds**: Critical (0), High (5), Medium (20), Low (50)
+- **Failure Conditions**: Pipeline fails on critical and high severity issues
+- **Tool Configuration**: Custom rules and patterns for each security tool
+- **Notification Settings**: Slack, email, and GitHub notifications
+
+### Security Best Practices
+
+#### **Code Security**
+- No hardcoded secrets or credentials
+- Input validation and sanitization
+- Secure coding practices
+- Regular dependency updates
+
+#### **Infrastructure Security**
+- Least privilege IAM policies
+- Network security groups and NACLs
+- Encryption at rest and in transit
+- Secure configuration management
+
+#### **Container Security**
+- Non-root user execution
+- Minimal base images
+- Regular image scanning
+- Security-focused Dockerfile practices
+
+### Security Monitoring
+
+#### **Continuous Security**
+- Security scans run on every push and pull request
+- Automated vulnerability detection
+- Security trend analysis
+- Compliance reporting
+
+#### **Security Alerts**
+- GitHub Security Advisories integration
+- Dependabot for dependency updates
+- Code scanning alerts
+- Infrastructure security notifications
+
+### Security Remediation
+
+#### **Vulnerability Response**
+1. **Review**: Examine security scan results in GitHub Security tab
+2. **Prioritize**: Address critical and high severity issues first
+3. **Remediate**: Fix security issues in code or infrastructure
+4. **Verify**: Re-run security scans to confirm fixes
+5. **Document**: Update security documentation and procedures
+
+#### **False Positive Management**
+- Review and dismiss false positives in GitHub Security tab
+- Update security tool configurations to reduce noise
+- Customize security rules for project-specific requirements
+
+### Security Compliance
+
+The security scanning helps ensure compliance with:
+- **OWASP Top 10**: Web application security risks
+- **CIS Benchmarks**: Infrastructure security standards
+- **NIST Guidelines**: Cybersecurity framework
+- **Industry Standards**: Security best practices and regulations
+
+### Security Tools Integration
+
+#### **GitHub Actions Integration**
+- Automated security scanning in CI/CD pipeline
+- Security results uploaded to GitHub Security tab
+- Security gates prevent deployment of vulnerable code
+- Comprehensive security reporting
+
+#### **Third-Party Integration**
+- Trivy for comprehensive vulnerability scanning
+- Semgrep for advanced static analysis
+- Checkov for infrastructure security
+- Safety for Python dependency scanning
+
+This comprehensive security scanning approach ensures your multi-account microservices architecture maintains high security standards throughout the development and deployment lifecycle.
+
 ## Resources
 
 - [AWS ECS Documentation](https://docs.aws.amazon.com/ecs/)
