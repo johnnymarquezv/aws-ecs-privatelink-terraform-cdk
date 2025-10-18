@@ -195,7 +195,7 @@ resource "aws_iam_role_policy" "cross_account_policy" {
           "ssm:GetParametersByPath"
         ]
         Resource = [
-          "arn:aws:ssm:${local.region}:${local.account_id}:parameter/${local.environment}/connectivity/*"
+          "arn:aws:ssm:${local.aws_region}:${local.account_id}:parameter/${local.environment}/connectivity/*"
         ]
       }
     ]

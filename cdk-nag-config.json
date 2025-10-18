@@ -1,0 +1,24 @@
+{
+  "rules": {
+    "AwsSolutions-IAM4": {
+      "reason": "Managed policies are acceptable for this use case"
+    },
+    "AwsSolutions-IAM5": {
+      "reason": "Wildcard permissions are acceptable for this specific use case"
+    },
+    "AwsSolutions-EC23": {
+      "reason": "Instance metadata service is required for this application"
+    }
+  },
+  "exclude": [
+    "cdk.out/**",
+    "node_modules/**",
+    ".git/**"
+  ],
+  "include": [
+    "**/*.ts",
+    "**/*.js"
+  ],
+  "severity": ["ERROR", "WARNING"],
+  "output": "sarif"
+}

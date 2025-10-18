@@ -1,0 +1,33 @@
+# Terrascan Configuration
+# This file configures Terrascan security scanning for infrastructure
+
+scan-rules:
+  - aws
+  - azure
+  - gcp
+  - k8s
+  - docker
+
+severity:
+  - HIGH
+  - MEDIUM
+  - LOW
+
+categories:
+  - security
+  - networking
+  - storage
+  - iam
+
+output:
+  - sarif
+  - json
+
+config:
+  - terrascan-config.yaml
+
+exclude-dirs:
+  - .git
+  - .terraform
+  - node_modules
+  - cdk.out
