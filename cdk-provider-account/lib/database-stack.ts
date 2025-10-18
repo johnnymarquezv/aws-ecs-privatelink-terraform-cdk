@@ -9,6 +9,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as backup from 'aws-cdk-lib/aws-backup';
 import * as events from 'aws-cdk-lib/aws-events';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 
 export interface DatabaseStackProps extends cdk.StackProps {
@@ -204,6 +205,70 @@ export class DatabaseStack extends cdk.Stack {
       logGroupName: `/aws/rds/cluster/${this.rdsCluster.clusterIdentifier}/postgresql`,
       retention: logs.RetentionDays[dbConfig.logRetention],
       removalPolicy: environment === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    });
+
+    // Export database values to SSM Parameter Store
+    new ssm.StringParameter(this, 'RdsEndpointParameter', {
+      parameterName: `/${environment}/${serviceName}/database/rds-endpoint`,
+      stringValue: this.rdsCluster.clusterEndpoint.hostname,
+      description: 'RDS cluster endpoint for database connections',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, 'RdsSecretArnParameter', {
+      parameterName: `/${environment}/${serviceName}/database/rds-secret-arn`,
+      stringValue: this.rdsSecret.secretArn,
+      description: 'RDS secret ARN for database credentials',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, 'RdsPortParameter', {
+      parameterName: `/${environment}/${serviceName}/database/rds-port`,
+      stringValue: '5432',
+      description: 'RDS cluster port',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, 'RdsDatabaseNameParameter', {
+      parameterName: `/${environment}/${serviceName}/database/rds-database-name`,
+      stringValue: dbConfig.rds.databaseName,
+      description: 'RDS database name',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, 'DynamoTableNameParameter', {
+      parameterName: `/${environment}/${serviceName}/database/dynamo-table-name`,
+      stringValue: this.dynamoTable.tableName,
+      description: 'DynamoDB table name',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, 'DynamoTableArnParameter', {
+      parameterName: `/${environment}/${serviceName}/database/dynamo-table-arn`,
+      stringValue: this.dynamoTable.tableArn,
+      description: 'DynamoDB table ARN',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, 'RedisEndpointParameter', {
+      parameterName: `/${environment}/${serviceName}/database/redis-endpoint`,
+      stringValue: this.redisCluster.attrRedisEndpointAddress,
+      description: 'Redis cluster endpoint',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, 'RedisPortParameter', {
+      parameterName: `/${environment}/${serviceName}/database/redis-port`,
+      stringValue: '6379',
+      description: 'Redis cluster port',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, 'BackupVaultArnParameter', {
+      parameterName: `/${environment}/${serviceName}/database/backup-vault-arn`,
+      stringValue: this.backupVault.backupVaultArn,
+      description: 'Backup vault ARN for database backups',
+      tier: ssm.ParameterTier.STANDARD,
     });
 
     // Output database connection information

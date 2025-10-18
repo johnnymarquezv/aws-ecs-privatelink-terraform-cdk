@@ -50,6 +50,7 @@ jobs:
       if: always() && steps.trivy-file.outputs.exists == 'true'
       with:
         sarif_file: 'trivy-results.sarif'
+        category: 'trivy'
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Run Semgrep SAST
@@ -189,6 +190,7 @@ jobs:
       if: always() && steps.checkov-file.outputs.terraform_file != ''
       with:
         sarif_file: '${{ steps.checkov-file.outputs.terraform_file }}'
+        category: 'checkov-terraform'
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload Checkov CloudFormation results
@@ -196,6 +198,7 @@ jobs:
       if: always() && steps.checkov-file.outputs.cloudformation_file != ''
       with:
         sarif_file: '${{ steps.checkov-file.outputs.cloudformation_file }}'
+        category: 'checkov-cloudformation'
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload tfsec results
@@ -203,6 +206,7 @@ jobs:
       if: always() && hashFiles('tfsec-results.sarif') != ''
       with:
         sarif_file: 'tfsec-results.sarif'
+        category: 'tfsec'
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload CDK Nag Provider results
@@ -210,6 +214,7 @@ jobs:
       if: always() && hashFiles('cdk-nag-provider-results.sarif') != ''
       with:
         sarif_file: 'cdk-nag-provider-results.sarif'
+        category: 'cdk-nag-provider'
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload CDK Nag Consumer results
@@ -217,6 +222,7 @@ jobs:
       if: always() && hashFiles('cdk-nag-consumer-results.sarif') != ''
       with:
         sarif_file: 'cdk-nag-consumer-results.sarif'
+        category: 'cdk-nag-consumer'
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload Terrascan results
@@ -224,6 +230,7 @@ jobs:
       if: always() && hashFiles('terrascan-results.sarif') != ''
       with:
         sarif_file: 'terrascan-results.sarif'
+        category: 'terrascan'
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Security Scan Summary

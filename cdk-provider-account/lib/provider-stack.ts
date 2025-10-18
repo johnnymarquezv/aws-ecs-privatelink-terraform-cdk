@@ -126,6 +126,19 @@ export class ProviderStack extends cdk.Stack {
       resources: ['*'],
     }));
 
+    // Add SSM Parameter Store permissions for database configuration
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'ssm:GetParameter',
+        'ssm:GetParameters',
+        'ssm:GetParametersByPath',
+      ],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/${environment}/*`,
+      ],
+    }));
+
     // Create CloudWatch Log Group
     const logGroup = new logs.LogGroup(this, 'ApplicationLogGroup', {
       logGroupName: `/${environment}/${serviceConfig.name}/ecs-application-logs`,
@@ -181,6 +194,8 @@ export class ProviderStack extends cdk.Stack {
         ENABLE_METRICS: 'true',
         RATE_LIMIT: '100',
         CONSUMER_SERVICES: JSON.stringify([]), // No consumer services for provider
+        // Database configuration will be retrieved from SSM Parameter Store at runtime
+        SSM_PARAMETER_PREFIX: `/${environment}/${serviceConfig.name}/database`,
       },
     });
 

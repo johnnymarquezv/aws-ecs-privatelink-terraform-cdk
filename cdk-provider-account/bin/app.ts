@@ -1,6 +1,7 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { ProviderStack } from '../lib/provider-stack';
+import { DatabaseStack } from '../lib/database-stack';
 import { getAccountConfig, getServiceConfig } from '../lib/config';
 
 // Set AWS profile for this CDK app
@@ -18,8 +19,8 @@ for (const environment of environments) {
   const serviceConfig = getServiceConfig('api-service');
   const serviceType = 'api-service';
   
-  // Create the provider stack
-  new ProviderStack(app, `api-service-${environment}-stack`, {
+  // Create the provider stack first (needed for VPC)
+  const providerStack = new ProviderStack(app, `api-service-${environment}-stack`, {
     // Use default AWS credential chain (most Terraform-like approach)
     // CDK will automatically detect account/region from current credentials
     // Fallback to hardcoded values for synthesis when credentials are not available
@@ -30,6 +31,26 @@ for (const environment of environments) {
     environment,
     serviceType,
     description: `API Service in ${environment} environment`,
+    tags: {
+      Project: 'Multi-Account-Microservices',
+      Service: serviceConfig.name,
+      Environment: environment,
+      AccountType: 'Provider',
+      ManagedBy: 'CDK',
+    },
+  });
+
+  // Create the database stack with VPC from provider stack
+  new DatabaseStack(app, `database-${environment}-stack`, {
+    env: {
+      account: accountConfig.accountId,
+      region: accountConfig.region,
+    },
+    environment,
+    vpc: providerStack.vpc,
+    serviceName: serviceConfig.name,
+    vpcCidr: '10.0.0.0/16', // Default VPC CIDR
+    description: `Database infrastructure for ${serviceConfig.name} in ${environment} environment`,
     tags: {
       Project: 'Multi-Account-Microservices',
       Service: serviceConfig.name,
