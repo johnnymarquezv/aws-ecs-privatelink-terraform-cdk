@@ -42,6 +42,3 @@ locals {
   current_config = local.environment_config[local.environment]
 }
 
-# Data sources
-data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
