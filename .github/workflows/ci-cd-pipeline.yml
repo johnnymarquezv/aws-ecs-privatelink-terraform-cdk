@@ -32,6 +32,27 @@ jobs:
       with:
         node-version: '20'
 
+    - name: Install Security Tools
+      run: |
+        # Install Python security tools
+        pip install bandit[toml] safety
+        
+        # Install infrastructure security tools
+        pip install checkov
+        
+        # Install Terrascan
+        curl -L "$(curl -s https://api.github.com/repos/tenable/terrascan/releases/latest | grep -o -E "https://.+?_Linux_x86_64.tar.gz")" -o terrascan.tar.gz
+        tar -xf terrascan.tar.gz terrascan
+        sudo mv terrascan /usr/local/bin/
+        
+        # Install tfsec
+        curl -L "$(curl -s https://api.github.com/repos/aquasecurity/tfsec/releases/latest | grep -o -E "https://.+?_linux_amd64.tar.gz")" -o tfsec.tar.gz
+        tar -xf tfsec.tar.gz tfsec
+        sudo mv tfsec /usr/local/bin/
+        
+        # Install CDK Nag
+        npm install -g cdk-nag
+
     - name: Run Trivy vulnerability scanner
       id: trivy
       uses: aquasecurity/trivy-action@master
@@ -40,23 +61,6 @@ jobs:
         scan-ref: '.'
         format: 'sarif'
         output: 'trivy-results.sarif'
-
-    - name: Check if Trivy SARIF file exists
-      id: trivy-file
-      run: |
-        if [ -f "trivy-results.sarif" ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
-        else
-          echo "exists=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
-      if: always() && steps.trivy-file.outputs.exists == 'true'
-      with:
-        sarif_file: 'trivy-results.sarif'
-        category: 'trivy'
-        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Run Semgrep SAST
       id: semgrep
@@ -84,7 +88,6 @@ jobs:
     - name: Run Bandit Python Security Linter
       id: bandit
       run: |
-        pip install bandit[toml]
         bandit -r microservice/app/ -f json -o bandit-report.json || echo "Bandit scan completed with issues"
         bandit -r microservice/app/ -f txt || echo "Bandit scan completed with issues"
       continue-on-error: true
@@ -92,67 +95,24 @@ jobs:
     - name: Run Safety for Python dependencies
       id: safety
       run: |
-        pip install safety
         safety check --json --output safety-report.json || echo "Safety scan completed with issues"
         safety check || echo "Safety scan completed with issues"
       continue-on-error: true
 
-    - name: Install Infrastructure Security Tools
+    - name: Run Infrastructure Security Scans
+      id: infrastructure-scans
       run: |
-        # Install Checkov
-        pip install checkov
-        
-        # Install Terrascan
-        curl -L "$(curl -s https://api.github.com/repos/tenable/terrascan/releases/latest | grep -o -E "https://.+?_Linux_x86_64.tar.gz")" -o terrascan.tar.gz
-        tar -xf terrascan.tar.gz terrascan
-        sudo mv terrascan /usr/local/bin/
-        
-        # Install tfsec
-        curl -L "$(curl -s https://api.github.com/repos/aquasecurity/tfsec/releases/latest | grep -o -E "https://.+?_linux_amd64.tar.gz")" -o tfsec.tar.gz
-        tar -xf tfsec.tar.gz tfsec
-        sudo mv tfsec /usr/local/bin/
-        
-        # Install CDK Nag
-        npm install -g cdk-nag
-
-    - name: Run Checkov Infrastructure Security Scan
-      id: checkov
-      run: |
-        echo "Running Checkov on Terraform files..."
+        echo "Running Checkov on infrastructure files..."
         checkov -d terraform-base-infra/ --config-file .github/.checkov.yaml --output sarif --output-file-path checkov-base-infra.sarif || echo "Base infra scan completed with issues"
         checkov -d terraform-security-account/ --config-file .github/.checkov.yaml --output sarif --output-file-path checkov-security-account.sarif || echo "Security account scan completed with issues"
         checkov -d . --framework terraform --output sarif --output-file-path checkov-results.sarif --verbose || echo "General Terraform scan completed with issues"
         checkov -d . --framework cloudformation --output sarif --output-file-path checkov-cfn-results.sarif --verbose || echo "CloudFormation scan completed with issues"
         
-        # Create minimal SARIF files if none were generated
-        for file in checkov-base-infra.sarif checkov-security-account.sarif checkov-results.sarif checkov-cfn-results.sarif; do
-          if [ ! -f "$file" ]; then
-            echo "Creating minimal SARIF file for $file..."
-            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Checkov","version":"2.0.0"}},"results":[]}]}' > "$file"
-          fi
-        done
-      continue-on-error: true
-
-    - name: Run tfsec Terraform Security Analysis
-      id: tfsec
-      run: |
         echo "Running tfsec on Terraform files..."
         tfsec terraform-base-infra/ --format sarif --out tfsec-base-infra.sarif || echo "Base infra scan completed with issues"
         tfsec terraform-security-account/ --format sarif --out tfsec-security-account.sarif || echo "Security account scan completed with issues"
         tfsec . --format sarif --out tfsec-results.sarif || echo "General scan completed with issues"
         
-        # Create minimal SARIF files if none were generated
-        for file in tfsec-base-infra.sarif tfsec-security-account.sarif tfsec-results.sarif; do
-          if [ ! -f "$file" ]; then
-            echo "Creating minimal SARIF file for $file..."
-            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"tfsec","version":"1.0.0"}},"results":[]}]}' > "$file"
-          fi
-        done
-      continue-on-error: true
-
-    - name: Run CDK Nag Security Analysis
-      id: cdk-nag
-      run: |
         echo "Running CDK Nag on CDK projects..."
         cd cdk-provider-account
         npm install
@@ -162,50 +122,31 @@ jobs:
         cdk-nag --config ../.github/cdk-nag-config.json --output-format sarif --output-file-path ../cdk-nag-consumer.sarif || echo "Consumer CDK Nag scan completed with issues"
         cd ..
         
-        # Create minimal SARIF files if none were generated
-        for file in cdk-nag-provider.sarif cdk-nag-consumer.sarif; do
-          if [ ! -f "$file" ]; then
-            echo "Creating minimal SARIF file for $file..."
-            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"CDK-Nag","version":"2.0.0"}},"results":[]}]}' > "$file"
-          fi
-        done
-      continue-on-error: true
-
-    - name: Run Terrascan Security Analysis
-      id: terrascan
-      run: |
         echo "Running Terrascan on infrastructure files..."
         terrascan scan -d terraform-base-infra/ --config .github/terrascan-config.yaml --format sarif --output terrascan-base-infra.sarif || echo "Base infra scan completed with issues"
         terrascan scan -d terraform-security-account/ --config .github/terrascan-config.yaml --format sarif --output terrascan-security-account.sarif || echo "Security account scan completed with issues"
         terrascan scan -d . --format sarif --output terrascan-results.sarif || echo "General scan completed with issues"
         
         # Create minimal SARIF files if none were generated
-        for file in terrascan-base-infra.sarif terrascan-security-account.sarif terrascan-results.sarif; do
+        for file in checkov-base-infra.sarif checkov-security-account.sarif checkov-results.sarif checkov-cfn-results.sarif tfsec-base-infra.sarif tfsec-security-account.sarif tfsec-results.sarif cdk-nag-provider.sarif cdk-nag-consumer.sarif terrascan-base-infra.sarif terrascan-security-account.sarif terrascan-results.sarif; do
           if [ ! -f "$file" ]; then
             echo "Creating minimal SARIF file for $file..."
-            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Terrascan","version":"1.0.0"}},"results":[]}]}' > "$file"
+            tool_name=$(echo "$file" | cut -d'-' -f1 | tr '[:lower:]' '[:upper:]')
+            echo "{\"\$schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\",\"runs\":[{\"tool\":{\"driver\":{\"name\":\"$tool_name\",\"version\":\"2.0.0\"}},\"results\":[]}]}" > "$file"
           fi
         done
       continue-on-error: true
 
     # Upload SARIF results
-    - name: Upload Checkov Base Infrastructure Results
+    - name: Upload Trivy Results
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
+      if: always() && hashFiles('trivy-results.sarif') != ''
       with:
-        sarif_file: checkov-base-infra.sarif
-        category: checkov-base-infra
+        sarif_file: trivy-results.sarif
+        category: trivy
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload Checkov Security Account Results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: checkov-security-account.sarif
-        category: checkov-security-account
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload Checkov General Results
+    - name: Upload Checkov Results
       uses: github/codeql-action/upload-sarif@v3
       if: always()
       with:
@@ -213,31 +154,7 @@ jobs:
         category: checkov-general
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload Checkov CloudFormation Results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: checkov-cfn-results.sarif
-        category: checkov-cloudformation
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload tfsec Base Infrastructure Results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: tfsec-base-infra.sarif
-        category: tfsec-base-infra
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload tfsec Security Account Results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: tfsec-security-account.sarif
-        category: tfsec-security-account
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload tfsec General Results
+    - name: Upload tfsec Results
       uses: github/codeql-action/upload-sarif@v3
       if: always()
       with:
@@ -261,23 +178,7 @@ jobs:
         category: cdk-nag-consumer
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload Terrascan Base Infrastructure Results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: terrascan-base-infra.sarif
-        category: terrascan-base-infra
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload Terrascan Security Account Results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: terrascan-security-account.sarif
-        category: terrascan-security-account
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload Terrascan General Results
+    - name: Upload Terrascan Results
       uses: github/codeql-action/upload-sarif@v3
       if: always()
       with:
@@ -291,15 +192,12 @@ jobs:
         echo "## Security Scan Results Summary" >> $GITHUB_STEP_SUMMARY
         echo "| Tool | Status | SARIF Uploaded |" >> $GITHUB_STEP_SUMMARY
         echo "|------|--------|----------------|" >> $GITHUB_STEP_SUMMARY
-        echo "| Trivy | ${{ steps.trivy.outcome }} | ${{ steps.trivy-file.outputs.exists }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Trivy | ${{ steps.trivy.outcome }} | ${{ hashFiles('trivy-results.sarif') != '' }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Semgrep | ${{ steps.semgrep.outcome }} | No |" >> $GITHUB_STEP_SUMMARY
         echo "| CodeQL | ${{ steps.codeql.outcome }} | N/A |" >> $GITHUB_STEP_SUMMARY
         echo "| Bandit | ${{ steps.bandit.outcome }} | No |" >> $GITHUB_STEP_SUMMARY
         echo "| Safety | ${{ steps.safety.outcome }} | No |" >> $GITHUB_STEP_SUMMARY
-        echo "| Checkov | ${{ steps.checkov.outcome }} | Yes |" >> $GITHUB_STEP_SUMMARY
-        echo "| tfsec | ${{ steps.tfsec.outcome }} | Yes |" >> $GITHUB_STEP_SUMMARY
-        echo "| CDK Nag | ${{ steps.cdk-nag.outcome }} | Yes |" >> $GITHUB_STEP_SUMMARY
-        echo "| Terrascan | ${{ steps.terrascan.outcome }} | Yes |" >> $GITHUB_STEP_SUMMARY
+        echo "| Infrastructure Scans | ${{ steps.infrastructure-scans.outcome }} | Yes |" >> $GITHUB_STEP_SUMMARY
 
   build-and-push:
     name: Build and Push Docker Image
@@ -351,11 +249,15 @@ jobs:
         echo "Image pushed with tags:"
         echo "${{ steps.meta.outputs.tags }}"
 
-  deploy-dev-provider:
-    name: Deploy Provider to Development
+  deploy-dev:
+    name: Deploy to Development
     runs-on: ubuntu-latest
     needs: [build-and-push]
     if: github.ref == 'refs/heads/main'
+    
+    strategy:
+      matrix:
+        account: [provider, consumer]
     
     steps:
     - name: Checkout code
@@ -364,8 +266,8 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.PROVIDER_AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.PROVIDER_AWS_SECRET_ACCESS_KEY }}
+        aws-access-key-id: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_ACCESS_KEY_ID || secrets.CONSUMER_AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_SECRET_ACCESS_KEY || secrets.CONSUMER_AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Setup Node.js
@@ -373,38 +275,9 @@ jobs:
       with:
         node-version: '20'
 
-    - name: Deploy Provider Infrastructure (Dev)
+    - name: Deploy Infrastructure (Dev)
       run: |
-        cd cdk-provider-account
-        npm install
-        npx cdk bootstrap
-        npx cdk deploy --all --require-approval never
-
-  deploy-dev-consumer:
-    name: Deploy Consumer to Development
-    runs-on: ubuntu-latest
-    needs: [build-and-push]
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.CONSUMER_AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.CONSUMER_AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-
-    - name: Deploy Consumer Infrastructure (Dev)
-      run: |
-        cd cdk-consumer-account
+        cd cdk-${{ matrix.account }}-account
         npm install
         npx cdk bootstrap
         npx cdk deploy --all --require-approval never
@@ -412,7 +285,7 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    needs: [deploy-dev-provider, deploy-dev-consumer]
+    needs: deploy-dev
     if: github.ref == 'refs/heads/main'
     environment: 
       name: staging
@@ -438,18 +311,9 @@ jobs:
       with:
         node-version: '20'
 
-    - name: Deploy Provider Infrastructure (Staging)
-      if: matrix.account == 'provider'
+    - name: Deploy Infrastructure (Staging)
       run: |
-        cd cdk-provider-account
-        npm install
-        npx cdk bootstrap
-        npx cdk deploy --all --require-approval never
-
-    - name: Deploy Consumer Infrastructure (Staging)
-      if: matrix.account == 'consumer'
-      run: |
-        cd cdk-consumer-account
+        cd cdk-${{ matrix.account }}-account
         npm install
         npx cdk bootstrap
         npx cdk deploy --all --require-approval never
@@ -474,7 +338,7 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_ACCESS_KEY_ID || secrets.CONSUMER_AWS_ACCESS_KEY_ID }}
+        aws-access-key-id: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_ACCESS_KEY_ID || secrets.CONSUMER_AWS_SECRET_ACCESS_KEY }}
         aws-secret-access-key: ${{ matrix.account == 'provider' && secrets.PROVIDER_AWS_SECRET_ACCESS_KEY || secrets.CONSUMER_AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
@@ -483,18 +347,9 @@ jobs:
       with:
         node-version: '20'
 
-    - name: Deploy Provider Infrastructure (Production)
-      if: matrix.account == 'provider'
+    - name: Deploy Infrastructure (Production)
       run: |
-        cd cdk-provider-account
-        npm install
-        npx cdk bootstrap
-        npx cdk deploy --all --require-approval never
-
-    - name: Deploy Consumer Infrastructure (Production)
-      if: matrix.account == 'consumer'
-      run: |
-        cd cdk-consumer-account
+        cd cdk-${{ matrix.account }}-account
         npm install
         npx cdk bootstrap
         npx cdk deploy --all --require-approval never
