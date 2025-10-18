@@ -34,24 +34,4 @@ describe('ProviderStack', () => {
     });
   });
 
-  test('creates ECS cluster and service for User service', () => {
-    const app = new cdk.App();
-    const stack = new ProviderStack(app, 'TestUserStack', {
-      environment: 'staging',
-      serviceType: 'user-service',
-    });
-
-    const template = Template.fromStack(stack);
-
-    // Check ECS cluster
-    template.hasResourceProperties('AWS::ECS::Cluster', {
-      ClusterName: 'user-service-staging-cluster',
-    });
-
-    // Check ECS service
-    template.hasResourceProperties('AWS::ECS::Service', {
-      LaunchType: 'FARGATE',
-      DesiredCount: 2,
-    });
-  });
 });

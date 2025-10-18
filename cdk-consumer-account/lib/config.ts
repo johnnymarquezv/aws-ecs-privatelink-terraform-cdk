@@ -34,12 +34,6 @@ export const SERVICES: Record<string, ServiceConfig> = {
     image: 'microservice',
     description: 'API Consumer Service'
   },
-  'user-consumer': {
-    name: 'user-consumer',
-    port: 80,
-    image: 'microservice',
-    description: 'User Consumer Service'
-  }
 };
 
 // Environment configurations

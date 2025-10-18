@@ -12,9 +12,77 @@ env:
   CONTAINER_REGISTRY: ghcr.io
 
 jobs:
+  # Security Scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Run Semgrep SAST
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: >-
+          p/security-audit
+          p/secrets
+          p/owasp-top-ten
+          p/python
+        generateSarif: "1"
+
+    - name: Run CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        languages: python
+
+    - name: Run Bandit Python Security Linter
+      run: |
+        pip install bandit[toml]
+        bandit -r microservice/app/ -f json -o bandit-report.json || true
+        bandit -r microservice/app/ -f txt
+
+    - name: Run Safety for Python dependencies
+      run: |
+        pip install safety
+        safety check --json --output safety-report.json || true
+        safety check
+
+    - name: Run Checkov for Infrastructure security
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: .
+        framework: terraform,cloudformation
+        output_format: sarif
+        output_file_path: checkov-results.sarif
+
+    - name: Upload Checkov results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'checkov-results.sarif'
+
   build-and-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    needs: security-scan
     permissions:
       contents: read
       packages: write
@@ -49,7 +117,7 @@ jobs:
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
-        context: ./microservice-repo
+        context: ./microservice
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
@@ -64,7 +132,7 @@ jobs:
   deploy-dev-provider:
     name: Deploy Provider to Development
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: [build-and-push]
     if: github.ref == 'refs/heads/main'
     
     steps:
@@ -93,7 +161,7 @@ jobs:
   deploy-dev-consumer:
     name: Deploy Consumer to Development
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: [build-and-push]
     if: github.ref == 'refs/heads/main'
     
     steps:

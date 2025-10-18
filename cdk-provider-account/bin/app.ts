@@ -16,14 +16,8 @@ const CONFIG = {
   API_SERVICE: {
     name: 'api-service',
     port: 8080,
-    image: 'nginx:alpine',
+    image: 'microservice', // Will be replaced with ECR URL
     description: 'API Service Provider'
-  },
-  USER_SERVICE: {
-    name: 'user-service',
-    port: 3000,
-    image: 'nginx:alpine',
-    description: 'User Service Provider'
   },
   
   // Environment-specific configuration
@@ -54,37 +48,35 @@ const CONFIG = {
 
 const app = new cdk.App();
 
-// Define all possible service and environment combinations
-const services = ['api-service', 'user-service'] as const;
+// Define environments only (single service)
 const environments = ['dev', 'staging', 'prod'] as const;
 
-// Create all possible stacks
-for (const serviceType of services) {
-  for (const environment of environments) {
-    // Get service configuration based on service type
-    const serviceConfig = serviceType === 'api-service' ? CONFIG.API_SERVICE : CONFIG.USER_SERVICE;
-    
-    // Create the provider stack
-    new ProviderStack(app, `${serviceConfig.name}-${environment}-provider-stack`, {
-      // Use default AWS credential chain (most Terraform-like approach)
-      // CDK will automatically detect account/region from current credentials
-      // Fallback to hardcoded values for synthesis when credentials are not available
-      env: {
-        account: process.env.AWS_ACCOUNT_ID || CONFIG.PROVIDER_ACCOUNT_ID,
-        region: process.env.AWS_REGION || CONFIG.REGION,
-      },
-      environment,
-      serviceType,
-      description: `${serviceConfig.description} in ${environment} environment`,
-      tags: {
-        Project: 'Multi-Account-Microservices',
-        Service: serviceConfig.name,
-        Environment: environment,
-        AccountType: 'Provider',
-        ManagedBy: 'CDK',
-      },
-    });
-  }
+// Create stacks for each environment (single service)
+for (const environment of environments) {
+  // Use API service as the single service
+  const serviceConfig = CONFIG.API_SERVICE;
+  const serviceType = 'api-service';
+  
+  // Create the provider stack
+  new ProviderStack(app, `api-service-${environment}-stack`, {
+    // Use default AWS credential chain (most Terraform-like approach)
+    // CDK will automatically detect account/region from current credentials
+    // Fallback to hardcoded values for synthesis when credentials are not available
+    env: {
+      account: process.env.AWS_ACCOUNT_ID || CONFIG.PROVIDER_ACCOUNT_ID,
+      region: process.env.AWS_REGION || CONFIG.REGION,
+    },
+    environment,
+    serviceType,
+    description: `API Service in ${environment} environment`,
+    tags: {
+      Project: 'Multi-Account-Microservices',
+      Service: 'api-service',
+      Environment: environment,
+      AccountType: 'Provider',
+      ManagedBy: 'CDK',
+    },
+  });
 }
 
 // Add CDK metadata

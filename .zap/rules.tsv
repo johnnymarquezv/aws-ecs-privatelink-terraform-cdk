@@ -1,0 +1,38 @@
+# OWASP ZAP Security Rules Configuration
+# This file defines custom security rules for ZAP scanning
+
+# High Priority Rules
+10001	HIGH	SQL Injection
+10002	HIGH	Cross-Site Scripting (XSS)
+10003	HIGH	Cross-Site Request Forgery (CSRF)
+10004	HIGH	Insecure Direct Object References
+10005	HIGH	Security Misconfiguration
+10006	HIGH	Sensitive Data Exposure
+10007	HIGH	Missing Function Level Access Control
+10008	HIGH	Cross-Site Scripting (XSS) - Reflected
+10009	HIGH	Cross-Site Scripting (XSS) - Stored
+10010	HIGH	SQL Injection - Time Based
+
+# Medium Priority Rules
+20001	MEDIUM	Insecure HTTP Methods
+20002	MEDIUM	Information Disclosure
+20003	MEDIUM	Directory Browsing
+20004	MEDIUM	Server Information Disclosure
+20005	MEDIUM	Missing Security Headers
+20006	MEDIUM	Insecure Cookies
+20007	MEDIUM	Weak Authentication
+20008	MEDIUM	Session Management Issues
+20009	MEDIUM	Input Validation
+20010	MEDIUM	Error Handling
+
+# Low Priority Rules
+30001	LOW	Content Security Policy
+30002	LOW	HTTP Strict Transport Security
+30003	LOW	X-Frame-Options
+30004	LOW	X-Content-Type-Options
+30005	LOW	Referrer Policy
+30006	LOW	Feature Policy
+30007	LOW	Permissions Policy
+30008	LOW	Cache Control
+30009	LOW	Server Signature
+30010	LOW	Directory Listing

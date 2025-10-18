@@ -47,14 +47,18 @@ graph TB
         NLB[Network Load Balancer]
         VES[VPC Endpoint Service]
         API_SVC[API Service]
-        USER_SVC[User Service]
         TGW_ATT_PROV[TGW Attachment]
+        RDS[RDS PostgreSQL]
+        DYNAMO[DynamoDB]
+        REDIS[ElastiCache Redis]
         VPC_PROV --> ECS_PROV
         ECS_PROV --> NLB
         NLB --> VES
         ECS_PROV --> API_SVC
-        ECS_PROV --> USER_SVC
         VPC_PROV --> TGW_ATT_PROV
+        API_SVC --> RDS
+        API_SVC --> DYNAMO
+        API_SVC --> REDIS
     end
     
     subgraph "Consumer Account (CDK)"
@@ -62,12 +66,10 @@ graph TB
         ECS_CONS[ECS Cluster]
         VEP[VPC Endpoints]
         API_CONS[API Consumer]
-        USER_CONS[User Consumer]
         TGW_ATT_CONS[TGW Attachment]
         VPC_CONS --> ECS_CONS
         ECS_CONS --> VEP
         ECS_CONS --> API_CONS
-        ECS_CONS --> USER_CONS
         VPC_CONS --> TGW_ATT_CONS
     end
     
@@ -86,8 +88,60 @@ graph TB
 - **Shared Services**: ECR repository, S3 artifacts bucket, monitoring roles, shared resources
 
 **CDK (Application Infrastructure)**
-- **Provider Accounts**: Complete VPC infrastructure, ECS clusters, services, Network Load Balancers, VPC Endpoint Services, Transit Gateway attachments
+- **Provider Accounts**: Complete VPC infrastructure, ECS clusters, services, Network Load Balancers, VPC Endpoint Services, Transit Gateway attachments, database infrastructure (RDS PostgreSQL, DynamoDB, ElastiCache Redis)
 - **Consumer Accounts**: Complete VPC infrastructure, ECS clusters, Interface VPC endpoints for consuming external services, Transit Gateway attachments
+
+### Database Architecture
+
+The microservice architecture includes a comprehensive multi-database setup designed for high availability, performance, and scalability:
+
+#### **PostgreSQL (RDS Aurora)**
+- **Purpose**: Primary relational database for structured data (users, API requests, application data)
+- **Engine**: Aurora PostgreSQL 15.4 with multi-AZ deployment
+- **Features**: 
+  - Automated backups with point-in-time recovery
+  - Performance Insights for query optimization
+  - Encryption at rest and in transit
+  - Connection pooling for efficient resource utilization
+- **Environment Configuration**:
+  - **Dev**: t3.medium, 7-day backup retention
+  - **Staging**: t3.large, 14-day backup retention, multi-AZ
+  - **Prod**: r5.large, 30-day backup retention, multi-AZ, deletion protection
+
+#### **DynamoDB**
+- **Purpose**: NoSQL database for session management and user activity tracking
+- **Features**:
+  - Pay-per-request billing model
+  - Global Secondary Index for efficient user activity queries
+  - Point-in-time recovery enabled
+  - TTL (Time To Live) for automatic data expiration
+  - AWS-managed encryption
+- **Use Cases**: Session storage, user activity logs, temporary data
+
+#### **Redis (ElastiCache)**
+- **Purpose**: In-memory cache for performance optimization and session management
+- **Engine**: Redis 7.0 with cluster mode for high availability
+- **Features**:
+  - Automatic snapshots for data persistence
+  - VPC security groups for network isolation
+  - Configurable snapshot retention policies
+- **Environment Configuration**:
+  - **Dev**: cache.t3.micro, 1 node, 5-day snapshot retention
+  - **Staging**: cache.t3.small, 1 node, 7-day snapshot retention
+  - **Prod**: cache.r5.large, 2 nodes, 14-day snapshot retention
+
+#### **Database Security and Access**
+- **Credential Management**: AWS Secrets Manager for secure database credentials
+- **Network Security**: Databases deployed in private subnets with VPC security groups
+- **IAM Integration**: ECS tasks use IAM roles for database access
+- **Encryption**: All data encrypted at rest and in transit
+- **Access Control**: Least privilege access with environment-specific permissions
+
+#### **Backup and Disaster Recovery**
+- **AWS Backup Integration**: Automated backup vault with environment-specific retention policies
+- **Cross-Region Backup**: Support for cross-region backup replication
+- **Point-in-Time Recovery**: RDS and DynamoDB PITR capabilities
+- **Disaster Recovery**: Multi-AZ deployment with automated failover for production
 
 ## Project Structure
 
@@ -97,8 +151,114 @@ graph TB
 ├── terraform-shared-services-account/ # Shared services and CI/CD
 ├── cdk-provider-account/          # Service provider infrastructure
 ├── cdk-consumer-account/          # Service consumer infrastructure
-└── microservice-repo/             # Sample FastAPI microservice
+├── microservice/                  # FastAPI microservice application
+└── run_tests.py                  # Test runner script
 ```
+
+## Account Structure
+
+### Multi-Account Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    AWS Multi-Account Structure              │
+├─────────────────────────────────────────────────────────────┤
+│  Account 111111111111 (Base Infrastructure)                │
+│  ├── terraform-base-infra/                                 │
+│  ├── Transit Gateway, VPCs, Networking                     │
+│  └── Cross-account IAM roles, monitoring                   │
+├─────────────────────────────────────────────────────────────┤
+│  Account 222222222222 (Provider Account)                   │
+│  ├── cdk-provider-account/                                 │
+│  ├── API Service Provider (ECS)                           │
+│  ├── Database Stack (RDS/Aurora/DynamoDB/Redis)           │
+│  └── PrivateLink Endpoints                                │
+├─────────────────────────────────────────────────────────────┤
+│  Account 333333333333 (Consumer Account)                   │
+│  ├── cdk-consumer-account/                                 │
+│  ├── API Consumer (ECS)                                    │
+│  └── VPC Endpoints (connects to provider)                  │
+├─────────────────────────────────────────────────────────────┤
+│  Account 444444444444 (Security Account)                   │
+│  ├── terraform-security-account/                                 │
+│  └── Cross-account IAM roles, policies                    │
+├─────────────────────────────────────────────────────────────┤
+│  Account 555555555555 (Shared Services)                    │
+│  ├── terraform-shared-services-account/                    │
+│  └── Shared services, monitoring                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Service Communication Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Simplified Service Architecture           │
+├─────────────────────────────────────────────────────────────┤
+│  Consumer Account (333333333333)                           │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  API Consumer (ECS)                               │   │
+│  │  ├── Port: 80                                      │   │
+│  │  ├── Image: microservice                           │   │
+│  │  └── VPC Endpoint → Provider Account               │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                              │                            │
+│                              │ HTTP/HTTPS                 │
+│                              │ (PrivateLink)              │
+│                              ▼                            │
+│  Provider Account (222222222222)                          │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  API Service Provider (ECS)                         │   │
+│  │  ├── Port: 8080                                    │   │
+│  │  ├── Image: microservice                           │   │
+│  │  ├── Database Stack (RDS/Aurora/DynamoDB/Redis)    │   │
+│  │  └── PrivateLink Service Endpoint                  │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Account Responsibilities
+
+**Base Infrastructure Account (111111111111)**
+- Transit Gateway for cross-account connectivity
+- Resource Access Manager for shared resources
+- Cross-account IAM roles and policies
+- Centralized monitoring and logging
+
+**Security Account (444444444444)**
+- CloudTrail for audit logging
+- AWS Config for compliance monitoring
+- S3 buckets for log storage
+- Cross-account security policies
+
+**Shared Services Account (555555555555)**
+- ECR repository for container images
+- S3 artifacts bucket for CI/CD
+- Monitoring roles and dashboards
+- Shared resources and utilities
+
+**Provider Account (222222222222)**
+- API Service Provider (ECS Fargate)
+- Database infrastructure (RDS, DynamoDB, Redis)
+- Network Load Balancer
+- VPC Endpoint Service (PrivateLink)
+- Transit Gateway attachment
+
+**Consumer Account (333333333333)**
+- API Consumer (ECS Fargate)
+- VPC Endpoints for service consumption
+- Transit Gateway attachment
+- Cross-account service discovery
+
+### Key Benefits of This Architecture
+
+✅ **Account Isolation**: Clear separation of concerns and security boundaries  
+✅ **Service Separation**: Provider and consumer in separate accounts  
+✅ **Security**: Fine-grained access control per account  
+✅ **Compliance**: Different governance and policies per account  
+✅ **Cost Management**: Separate billing and cost centers  
+✅ **Scalability**: Independent scaling and management  
+✅ **Simplified Pattern**: Single API service focus after user service removal
 
 ## Prerequisites
 
@@ -109,6 +269,37 @@ graph TB
 - **Docker** (for microservice development)
 
 ## Quick Start
+
+### Local Microservice Testing (Quick Start)
+
+To quickly test the microservice locally:
+
+```bash
+# 1. Navigate to microservice directory
+# Run from project root (microservice files are at root level)
+
+# 2. Create and activate virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# 3. Install dependencies
+pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt
+
+# 4. Ensure Python package structure (if not already present)
+touch app/__init__.py tests/__init__.py
+
+# 5. Start the service
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# 6. Test the service (in another terminal)
+curl http://localhost:8000/health
+curl http://localhost:8000/
+```
+
+**Service will be available at:**
+- Main service: http://localhost:8000
+- Interactive API docs: http://localhost:8000/docs
 
 ### AWS Profile Setup
 
@@ -405,7 +596,7 @@ npx cdk synth
 
 ### Deploy Infrastructure
 
-The microservice is automatically built and pushed to GitHub Container Registry (ghcr.io) via GitHub Actions when changes are made to the `microservice-repo/` directory.
+The microservice is automatically built and pushed to GitHub Container Registry (ghcr.io) via GitHub Actions when changes are made to the microservice files.
 
 Deploy the infrastructure in the following order:
 
@@ -448,7 +639,7 @@ npx cdk bootstrap
 npx cdk ls
 
 # 3. Deploy specific stacks (example: deploy dev environment)
-npx cdk deploy api-service-dev-provider-stack user-service-dev-provider-stack
+npx cdk deploy api-service-dev-provider-stack
 ```
 
 #### Step 5: Deploy Consumer Account (CDK)
@@ -466,7 +657,7 @@ npx cdk bootstrap
 npx cdk ls
 
 # 3. Deploy specific stacks (example: deploy dev environment)
-npx cdk deploy api-consumer-dev-consumer-stack user-consumer-dev-consumer-stack
+npx cdk deploy api-consumer-dev-consumer-stack
 ```
 
 ### Test Connectivity
@@ -613,7 +804,7 @@ npx cdk bootstrap
 npx cdk ls
 
 # 3. Deploy specific stacks
-npx cdk deploy api-service-dev-provider-stack user-service-dev-provider-stack
+npx cdk deploy api-service-dev-provider-stack
 ```
 
 **Multi-Account Deployment Workflow:**
@@ -677,16 +868,41 @@ For production deployment, update account IDs and region in the configuration fi
 
 ### FastAPI Microservice
 
-The `microservice-repo/` contains a production-ready FastAPI application that serves as both provider and consumer services.
+The microservice contains a production-ready FastAPI application that serves as both provider and consumer services.
 
 #### Local Development
+
+**Prerequisites:**
+- Python 3.11+ (Python 3.12 recommended for best compatibility)
+- pip (Python package manager)
+
+**Note:** Python 3.13 has compatibility issues with some older package versions. If you encounter build errors, consider using Python 3.12 or use the virtual environment approach below.
+
+**Setup and Run:**
+
+1. **Create Virtual Environment:**
 ```bash
-cd microservice-repo
-python -m venv venv
+# Run from project root (microservice files are at root level)
+python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+2. **Install Dependencies:**
+```bash
+pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt
+```
+
+3. **Run the Service:**
+```bash
+# Start the service with auto-reload (uses default configuration)
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Service will be available at:**
+- **Main Service**: http://localhost:8000
+- **Interactive API Docs**: http://localhost:8000/docs
+- **ReDoc Documentation**: http://localhost:8000/redoc
 
 #### API Endpoints
 
@@ -700,43 +916,145 @@ The microservice provides the following endpoints:
 - `GET /status` - Detailed service status and metrics
 - `GET /metrics` - Prometheus-compatible metrics
 
-#### Environment Variables
+#### Default Configuration
 
-The microservice is configured via environment variables:
+The microservice uses these default values (no environment variables needed):
 
 ```bash
+# Default configuration (no environment variables needed)
 SERVICE_NAME=microservice          # Service identifier
 SERVICE_PORT=8000                  # Port to listen on
 SERVICE_VERSION=1.0.0              # Service version
 LOG_LEVEL=INFO                     # Logging level
 ENABLE_METRICS=true                # Enable metrics endpoint
 RATE_LIMIT=100                     # Requests per minute per IP
-CONSUMER_SERVICES=[...]            # JSON array of consumer services
+CONSUMER_SERVICES=[]               # No external services by default
 ```
 
 #### Docker Build
 
 ```bash
-cd microservice-repo
+# Run from project root (microservice files are at root level)
 docker build -t microservice:latest .
 docker run -p 8000:8000 microservice:latest
 ```
 
-#### Testing the Microservice
+#### Local Testing
 
+**Default Configuration:**
+
+The microservice uses sensible defaults that work out of the box:
+- `SERVICE_NAME`: "microservice"
+- `SERVICE_VERSION`: "1.0.0" 
+- `LOG_LEVEL`: "INFO"
+- `ENABLE_METRICS`: "true"
+- `RATE_LIMIT`: "100"
+- `CONSUMER_SERVICES`: "[]" (no external services)
+
+
+**1. Simple Python Testing:**
+
+**A. Single Service Testing (Provider Mode):**
 ```bash
-# Health check
+# Start a single service (acts as provider)
+# Run from project root (microservice files are at root level)
+source venv/bin/activate
+
+# Start the service with default configuration
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Test provider endpoints
 curl http://localhost:8000/health
-
-# Service information
-curl http://localhost:8000/
-
-# Service status
+curl http://localhost:8000/hello
 curl http://localhost:8000/status
-
-# Metrics
-curl http://localhost:8000/metrics
 ```
+
+
+
+**2. Local Kubernetes Testing (Production-like):**
+
+For a more production-like testing environment that closely mirrors ECS behavior, use local Kubernetes:
+
+**Prerequisites:**
+- Install a local Kubernetes cluster (minikube, kind, k3d, or Docker Desktop)
+- kubectl configured to access your cluster
+
+**Quick Setup with minikube:**
+```bash
+# Start minikube
+minikube start
+minikube tunnel  # Enable LoadBalancer support
+
+# Build and load image
+# Run from project root (microservice files are at root level)
+docker build -t microservice:latest .
+minikube image load microservice:latest
+
+# Deploy to Kubernetes
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/api-service-provider.yaml
+kubectl apply -f k8s/api-consumer.yaml
+
+# Wait for services to be ready
+kubectl wait --for=condition=available --timeout=300s deployment/api-service-provider -n microservice-test
+kubectl wait --for=condition=available --timeout=300s deployment/api-consumer -n microservice-test
+```
+
+**Test Kubernetes Services:**
+```bash
+# Port forward to consumer service
+kubectl port-forward service/api-consumer 8001:8000 -n microservice-test
+
+# Test service discovery
+curl http://localhost:8001/services
+
+# Test service-to-service communication
+curl -X POST http://localhost:8001/call/api-service \
+  -H "Content-Type: application/json" \
+  -d '{"test": "data", "action": "get_data"}'
+
+# Check service status and metrics
+curl http://localhost:8001/status
+curl http://localhost:8001/metrics
+```
+
+**Benefits of Kubernetes Testing:**
+- ✅ **Production-like**: DNS-based service discovery like ECS
+- ✅ **Load Balancing**: LoadBalancer services similar to ALB
+- ✅ **Health Checks**: Kubernetes probes like ECS health checks
+- ✅ **Resource Management**: CPU/memory limits and requests
+- ✅ **Scaling**: Can test horizontal pod autoscaling
+- ✅ **Networking**: Cluster networking and service communication
+
+**Cleanup:**
+```bash
+kubectl delete namespace microservice-test
+minikube stop
+```
+
+**3. Unit Tests:**
+```bash
+# Option 1: Run from microservice directory
+cd microservice
+source venv/bin/activate
+pytest tests/ -v
+
+# Option 2: Run from project root using the test runner
+python3 run_tests.py
+```
+
+**4. Interactive API Testing:**
+- Visit http://localhost:8000/docs for Swagger UI
+- Visit http://localhost:8000/redoc for ReDoc documentation
+- Use the interactive interface to test all endpoints
+
+**5. Troubleshooting:**
+- **Port conflicts**: Use different ports (8000, 8001, 8002, etc.)
+- **Service discovery**: CONSUMER_SERVICES defaults to empty array (no external services)
+- **Dependencies missing**: Run `pip install -r requirements.txt`
+- **Virtual environment issues**: Delete `venv/` and recreate
+- **Test failures**: One test (readiness check) may fail in test mode - this is expected
+- **Python 3.13 build errors**: Use Python 3.12 instead, or try: `pip install --upgrade pip setuptools wheel` before installing requirements
 
 ### Microservice Features
 
@@ -749,6 +1067,39 @@ curl http://localhost:8000/metrics
 - **Security**: Non-root user, minimal base image, input validation
 - **Cross-Service Communication**: HTTP-based service-to-service calls
 - **Error Handling**: Comprehensive error handling and HTTP status codes
+- **Database Integration**: Multi-database support with PostgreSQL, DynamoDB, and Redis
+- **Database Health Monitoring**: Real-time database connection and health status monitoring
+- **Caching**: Redis-based caching for improved performance
+- **Session Management**: DynamoDB-based session storage with TTL support
+
+### Database Operations
+
+The microservice includes comprehensive database management capabilities:
+
+#### **Database Connection Management**
+- **Centralized Database Manager**: Single interface for all database operations
+- **Connection Pooling**: Efficient async connection management for PostgreSQL
+- **Health Monitoring**: Real-time database health checks and status reporting
+- **Error Handling**: Robust error handling with automatic retry mechanisms
+
+#### **API Endpoints for Database Operations**
+- **Database Health**: `GET /database/health` - Check status of all databases
+- **User Management**: 
+  - `POST /database/users` - Create new users
+  - `GET /database/users/{user_id}` - Retrieve user information
+- **Cache Operations**:
+  - `POST /database/cache/{key}` - Set cache values
+  - `GET /database/cache/{key}` - Retrieve cache values
+  - `DELETE /database/cache/{key}` - Remove cache entries
+- **Session Management**:
+  - `POST /database/sessions` - Store session data
+  - `GET /database/sessions/{session_id}` - Retrieve session data
+- **User Activity**: `GET /database/users/{user_id}/activity` - Query user activity logs
+
+#### **Database Testing and Validation**
+- **Connection Testing**: Comprehensive database connectivity tests
+- **Performance Testing**: Load testing for database operations
+- **Health Validation**: Automated health check validation
 
 ## Monitoring
 
@@ -778,6 +1129,27 @@ aws ecs describe-tasks --cluster api-service-dev-cluster --tasks $(aws ecs list-
 
 # View service events
 aws ecs describe-services --cluster api-service-dev-cluster --services api-service-dev-service --profile provider-account --query 'services[0].events'
+```
+
+### Database Monitoring
+
+Monitor database performance and health:
+
+```bash
+# Check RDS cluster status
+aws rds describe-db-clusters --db-cluster-identifier api-service-dev-cluster --profile provider-account
+
+# Check RDS Performance Insights
+aws rds describe-db-instances --db-instance-identifier api-service-dev-instance --profile provider-account
+
+# Check DynamoDB table status
+aws dynamodb describe-table --table-name api-service-dev-data --profile provider-account
+
+# Check ElastiCache cluster status
+aws elasticache describe-cache-clusters --cache-cluster-id api-service-dev-redis --profile provider-account
+
+# View database metrics in CloudWatch
+aws cloudwatch get-metric-statistics --namespace AWS/RDS --metric-name CPUUtilization --dimensions Name=DBInstanceIdentifier,Value=api-service-dev-instance --start-time 2024-01-01T00:00:00Z --end-time 2024-01-01T23:59:59Z --period 3600 --statistics Average --profile provider-account
 ```
 
 ### VPC Endpoint Service Monitoring
@@ -886,6 +1258,54 @@ aws ecs describe-services --cluster api-service-dev-cluster --services api-servi
 - Application startup time exceeds health check grace period
 - Network connectivity issues
 
+#### 5. Database Connection Issues
+
+**Symptoms**: Application cannot connect to databases, health checks failing
+
+**Debug Steps**:
+```bash
+# Check database security groups
+aws ec2 describe-security-groups --group-ids $(aws ec2 describe-security-groups --filters "Name=group-name,Values=*rds*" --profile provider-account --query 'SecurityGroups[0].GroupId' --output text) --profile provider-account
+
+# Check RDS cluster status
+aws rds describe-db-clusters --db-cluster-identifier api-service-dev-cluster --profile provider-account
+
+# Check database credentials in Secrets Manager
+aws secretsmanager get-secret-value --secret-id api-service-dev-rds-secret --profile provider-account
+
+# Test database connectivity from ECS task
+aws ecs execute-command --cluster api-service-dev-cluster --task $(aws ecs list-tasks --cluster api-service-dev-cluster --service-name api-service-dev-service --profile provider-account --query 'taskArns[0]' --output text) --container Container --interactive --command "/bin/bash" --profile provider-account
+```
+
+**Common Causes**:
+- Security group rules blocking database access
+- Database credentials expired or incorrect
+- Database instance not running or in maintenance mode
+- Network connectivity issues between ECS and database subnets
+
+#### 6. Database Performance Issues
+
+**Symptoms**: Slow database queries, high CPU/memory usage
+
+**Debug Steps**:
+```bash
+# Check RDS Performance Insights
+aws rds describe-db-instances --db-instance-identifier api-service-dev-instance --profile provider-account --query 'DBInstances[0].PerformanceInsightsEnabled'
+
+# Check database metrics
+aws cloudwatch get-metric-statistics --namespace AWS/RDS --metric-name CPUUtilization --dimensions Name=DBInstanceIdentifier,Value=api-service-dev-instance --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) --end-time $(date -u +%Y-%m-%dT%H:%M:%S) --period 300 --statistics Average --profile provider-account
+
+# Check DynamoDB throttling
+aws cloudwatch get-metric-statistics --namespace AWS/DynamoDB --metric-name ThrottledRequests --dimensions Name=TableName,Value=api-service-dev-data --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) --end-time $(date -u +%Y-%m-%dT%H:%M:%S) --period 300 --statistics Sum --profile provider-account
+```
+
+**Common Causes**:
+- Insufficient database instance size
+- Missing database indexes
+- Inefficient queries
+- High concurrent connections
+- DynamoDB throttling due to insufficient capacity
+
 ### Debug Commands
 
 #### Get Service Endpoints
@@ -906,6 +1326,36 @@ aws ec2-instance-connect send-ssh-public-key --instance-id $CONSUMER_INSTANCE_ID
 ssh ec2-user@$CONSUMER_IP "curl -f http://$PROVIDER_IP:8080/health"
 ```
 
+#### Test Database Connectivity
+```bash
+# Test database connections from microservice
+curl http://$SERVICE_IP:8080/database/health
+
+# Test database operations
+curl -X POST http://$SERVICE_IP:8080/database/users \
+  -H "Content-Type: application/json" \
+  -d '{"username": "testuser", "email": "test@example.com", "full_name": "Test User"}'
+
+# Test cache operations
+curl -X POST http://$SERVICE_IP:8080/database/cache/test-key \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello Cache", "timestamp": "2024-01-01T00:00:00Z"}'
+
+# Test session storage
+curl -X POST http://$SERVICE_IP:8080/database/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "test-session", "data": {"user_id": "123", "role": "admin"}, "ttl": 3600}'
+```
+
+#### Database Testing Commands
+```bash
+# Test database connections
+python scripts/test_databases.py --env dev --test-all
+
+# Test database performance
+python scripts/test_databases.py --env prod --test-performance
+```
+
 ## Security Considerations
 
 - **Network Isolation**: Services communicate through VPC endpoints only
@@ -915,6 +1365,13 @@ ssh ec2-user@$CONSUMER_IP "curl -f http://$PROVIDER_IP:8080/health"
 - **Container Security**: Non-root user, minimal base image, image scanning
 - **VPC Endpoint Security**: Explicit acceptance required for connections
 - **Transit Gateway**: Network ACLs and security groups apply to cross-account traffic
+- **Database Security**: 
+  - **Credential Management**: AWS Secrets Manager for secure database credentials
+  - **Network Security**: Databases in private subnets with VPC security groups
+  - **Access Control**: IAM roles with least privilege database permissions
+  - **Encryption**: All databases encrypted at rest and in transit
+  - **Backup Security**: Encrypted backups with cross-region replication
+  - **Audit Logging**: Comprehensive database access and operation logging
 
 ## Resources
 

@@ -7,10 +7,22 @@ import json
 import asyncio
 import aiohttp
 import time
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import List, Dict, Optional
 import logging
 from contextlib import asynccontextmanager
+
+# Import database and routers (conditional to allow running without dependencies)
+try:
+    from .database import db_manager
+    from .routers import database
+    DATABASE_AVAILABLE = True
+except ImportError as e:
+    print(f"Database dependencies not available: {e}")
+    print("Microservice will run without database functionality")
+    db_manager = None
+    database = None
+    DATABASE_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(
@@ -50,9 +62,24 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {SERVICE_NAME} v{SERVICE_VERSION} on port {SERVICE_PORT}")
     logger.info(f"Consumer services: {len(CONSUMER_SERVICES)}")
+    
+    # Initialize database connections (if available)
+    if DATABASE_AVAILABLE and db_manager:
+        await db_manager.initialize()
+        # Database initialization is non-blocking - microservice continues even if databases fail
+    else:
+        logger.info("Database functionality not available - running without databases")
+    
     yield
+    
     # Shutdown
     logger.info(f"Shutting down {SERVICE_NAME}")
+    if DATABASE_AVAILABLE and db_manager:
+        try:
+            await db_manager.close()
+            logger.info("Database connections closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing database connections: {e}")
 
 app = FastAPI(
     title=f"{SERVICE_NAME.title()} API",
@@ -105,6 +132,10 @@ async def rate_limit_middleware(request: Request, call_next):
 
 app.middleware("http")(rate_limit_middleware)
 
+# Include database router (if available)
+if DATABASE_AVAILABLE and database:
+    app.include_router(database.router)
+
 # Request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -143,7 +174,7 @@ async def root():
         "service": SERVICE_NAME,
         "version": SERVICE_VERSION,
         "status": "running",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(UTC).isoformat() + "Z",
         "consumer_services": len(CONSUMER_SERVICES)
     }
 
@@ -154,27 +185,63 @@ async def health_check():
         "status": "healthy",
         "service": SERVICE_NAME,
         "version": SERVICE_VERSION,
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "timestamp": datetime.now(UTC).isoformat() + "Z"
     }
 
 @app.get("/ready")
 async def readiness_check():
     """Readiness check endpoint (includes dependency checks)"""
-    # Check if we can make HTTP requests (basic readiness check)
-    try:
-        async with aiohttp.ClientSession() as session:
-            # Simple self-check
-            async with session.get(f"http://localhost:{SERVICE_PORT}/health", timeout=1) as response:
-                if response.status == 200:
-                    return {
-                        "status": "ready",
-                        "service": SERVICE_NAME,
-                        "version": SERVICE_VERSION,
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                        "dependencies": "ok"
-                    }
-    except Exception as e:
-        logger.warning(f"Readiness check failed: {e}")
+    dependencies_status = {}
+    
+    # HTTP service is ready if we can reach this endpoint
+    dependencies_status["http"] = True
+    
+    # Check database connections (if available)
+    if DATABASE_AVAILABLE and db_manager:
+        try:
+            # Check PostgreSQL
+            if db_manager.pg_pool:
+                async with db_manager.pg_pool.acquire() as conn:
+                    await conn.fetchval("SELECT 1")
+                dependencies_status["postgresql"] = True
+            else:
+                dependencies_status["postgresql"] = False
+                
+            # Check Redis
+            if db_manager.redis_client:
+                await db_manager.redis_client.ping()
+                dependencies_status["redis"] = True
+            else:
+                dependencies_status["redis"] = False
+                
+            # Check DynamoDB
+            if db_manager.dynamo_table:
+                db_manager.dynamo_table.describe_table()
+                dependencies_status["dynamodb"] = True
+            else:
+                dependencies_status["dynamodb"] = False
+                
+        except Exception as e:
+            logger.warning(f"Database readiness check failed: {e}")
+            dependencies_status["postgresql"] = False
+            dependencies_status["redis"] = False
+            dependencies_status["dynamodb"] = False
+    else:
+        # Database functionality not available
+        dependencies_status["postgresql"] = False
+        dependencies_status["redis"] = False
+        dependencies_status["dynamodb"] = False
+    
+    # Service is ready if HTTP is working (databases are optional for basic functionality)
+    if dependencies_status.get("http", False):
+        return {
+            "status": "ready",
+            "service": SERVICE_NAME,
+            "version": SERVICE_VERSION,
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
+            "dependencies": dependencies_status,
+            "note": "Database connections are optional for basic functionality"
+        }
     
     raise HTTPException(status_code=503, detail="Service not ready")
 
@@ -184,7 +251,7 @@ async def list_services():
     return {
         "services": CONSUMER_SERVICES,
         "count": len(CONSUMER_SERVICES),
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "timestamp": datetime.now(UTC).isoformat() + "Z"
     }
 
 @app.post("/call/{service_name}")
@@ -213,7 +280,7 @@ async def call_service(service_name: str, request_data: dict = None):
                     "service": service_name,
                     "status": response.status,
                     "result": result,
-                    "timestamp": datetime.utcnow().isoformat() + "Z"
+                    "timestamp": datetime.now(UTC).isoformat() + "Z"
                 }
     except asyncio.TimeoutError:
         logger.error(f"Timeout calling {service_name}")
@@ -241,7 +308,7 @@ async def service_status():
             "service_calls_by_service": metrics["service_calls_by_service"]
         },
         "consumer_services": len(CONSUMER_SERVICES),
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "timestamp": datetime.now(UTC).isoformat() + "Z"
     }
 
 @app.get("/metrics")

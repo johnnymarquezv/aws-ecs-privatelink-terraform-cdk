@@ -27,6 +27,7 @@ cdk.json.bak
 *.swp
 *.swo
 *~
+peex.md
 
 # OS
 .DS_Store
@@ -92,3 +93,4 @@ config
 # Local configuration overrides
 config.local.json
 terraform.tfvars.local
+

@@ -16,14 +16,8 @@ const CONFIG = {
   API_CONSUMER: {
     name: 'api-consumer',
     port: 80,
-    image: 'nginx:alpine',
+    image: 'microservice', // Will be replaced with ECR URL
     description: 'API Consumer Service'
-  },
-  USER_CONSUMER: {
-    name: 'user-consumer',
-    port: 80,
-    image: 'nginx:alpine',
-    description: 'User Consumer Service'
   },
   
   // Environment-specific configuration
@@ -54,37 +48,35 @@ const CONFIG = {
 
 const app = new cdk.App();
 
-// Define all possible service and environment combinations
-const services = ['api-consumer', 'user-consumer'] as const;
+// Define environments only (single service)
 const environments = ['dev', 'staging', 'prod'] as const;
 
-// Create all possible stacks
-for (const serviceType of services) {
-  for (const environment of environments) {
-    // Get service configuration based on service type
-    const serviceConfig = serviceType === 'api-consumer' ? CONFIG.API_CONSUMER : CONFIG.USER_CONSUMER;
-    
-    // Create the consumer stack
-    new ConsumerStack(app, `${serviceConfig.name}-${environment}-consumer-stack`, {
-      // Use default AWS credential chain (most Terraform-like approach)
-      // CDK will automatically detect account/region from current credentials
-      // Fallback to hardcoded values for synthesis when credentials are not available
-      env: {
-        account: process.env.AWS_ACCOUNT_ID || CONFIG.CONSUMER_ACCOUNT_ID,
-        region: process.env.AWS_REGION || CONFIG.REGION,
-      },
-      environment,
-      serviceType,
-      description: `${serviceConfig.description} in ${environment} environment`,
-      tags: {
-        Project: 'Multi-Account-Microservices',
-        Service: serviceConfig.name,
-        Environment: environment,
-        AccountType: 'Consumer',
-        ManagedBy: 'CDK',
-      },
-    });
-  }
+// Create stacks for each environment (single service)
+for (const environment of environments) {
+  // Use API consumer as the single service
+  const serviceConfig = CONFIG.API_CONSUMER;
+  const serviceType = 'api-consumer';
+  
+  // Create the consumer stack
+  new ConsumerStack(app, `api-service-${environment}-stack`, {
+    // Use default AWS credential chain (most Terraform-like approach)
+    // CDK will automatically detect account/region from current credentials
+    // Fallback to hardcoded values for synthesis when credentials are not available
+    env: {
+      account: process.env.AWS_ACCOUNT_ID || CONFIG.CONSUMER_ACCOUNT_ID,
+      region: process.env.AWS_REGION || CONFIG.REGION,
+    },
+    environment,
+    serviceType,
+    description: `API Service in ${environment} environment`,
+    tags: {
+      Project: 'Multi-Account-Microservices',
+      Service: 'api-service',
+      Environment: environment,
+      AccountType: 'Consumer',
+      ManagedBy: 'CDK',
+    },
+  });
 }
 
 // Add CDK metadata

@@ -34,12 +34,6 @@ export const SERVICES: Record<string, ServiceConfig> = {
     image: 'microservice',
     description: 'API Service Provider'
   },
-  'user-service': {
-    name: 'user-service',
-    port: 3000,
-    image: 'microservice',
-    description: 'User Service Provider'
-  }
 };
 
 // Environment configurations

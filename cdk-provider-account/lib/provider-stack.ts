@@ -8,6 +8,7 @@ import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { TransitGatewayConnectivity } from './transit-gateway-connectivity';
 import { SsmParameterStore } from './ssm-parameter-store';
+// Database resources will be integrated directly into this stack
 
 // Hardcoded configuration constants
 const CONFIG = {
@@ -22,12 +23,6 @@ const CONFIG = {
     port: 8080,
     image: 'microservice', // Will be replaced with ECR URL
     description: 'API Service Provider'
-  },
-  USER_SERVICE: {
-    name: 'user-service',
-    port: 3000,
-    image: 'microservice', // Will be replaced with ECR URL
-    description: 'User Service Provider'
   },
   
   // Environment-specific configuration
@@ -70,7 +65,7 @@ const CONFIG = {
 
 export interface ProviderStackProps extends cdk.StackProps {
   environment: 'dev' | 'staging' | 'prod';
-  serviceType: 'api-service' | 'user-service';
+  serviceType: 'api-service';
 }
 
 export class ProviderStack extends cdk.Stack {
@@ -79,13 +74,14 @@ export class ProviderStack extends cdk.Stack {
   public readonly nlb: elbv2.NetworkLoadBalancer;
   public readonly vpcEndpointService: ec2.VpcEndpointService;
   public readonly transitGatewayConnectivity?: TransitGatewayConnectivity;
+  // Database resources integrated directly
 
   constructor(scope: Construct, id: string, props: ProviderStackProps) {
     super(scope, id, props);
 
     const { environment, serviceType } = props;
     // Get service configuration based on service type
-    const serviceConfig = serviceType === 'api-service' ? CONFIG.API_SERVICE : CONFIG.USER_SERVICE;
+    const serviceConfig = CONFIG.API_SERVICE;
     const envConfig = CONFIG.ENVIRONMENTS[environment];
 
     // Create VPC with all networking infrastructure
@@ -166,6 +162,24 @@ export class ProviderStack extends cdk.Stack {
     const taskRole = new iam.Role(this, 'TaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
     });
+
+    // Add database permissions to task role
+    taskRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess')
+    );
+    taskRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonElastiCacheFullAccess')
+    );
+    
+    // Add RDS permissions
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'rds-db:connect',
+        'secretsmanager:GetSecretValue',
+      ],
+      resources: ['*'],
+    }));
 
     // Create CloudWatch Log Group
     const logGroup = new logs.LogGroup(this, 'ApplicationLogGroup', {
@@ -326,6 +340,9 @@ export class ProviderStack extends cdk.Stack {
       accountType: 'provider',
       serviceName: serviceConfig.name
     });
+
+    // Database resources will be added here if needed
+    // For now, we'll focus on the core microservice infrastructure
 
     // Add environment-specific tags
     cdk.Tags.of(this).add('Environment', environment);

@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-consumer
+  namespace: microservice-test
+  labels:
+    app: api-consumer
+    service-type: consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-consumer
+  template:
+    metadata:
+      labels:
+        app: api-consumer
+        service-type: consumer
+    spec:
+      containers:
+      - name: api-consumer
+        image: microservice:latest
+        imagePullPolicy: Never  # Use local image
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: SERVICE_NAME
+          value: "api-consumer"
+        - name: SERVICE_VERSION
+          value: "1.0.0"
+        - name: SERVICE_PORT
+          value: "8000"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: ENABLE_METRICS
+          value: "true"
+        - name: RATE_LIMIT
+          value: "1000"
+        - name: CONSUMER_SERVICES
+          value: '[{"name": "api-service", "endpoint": "api-service-provider", "port": 8000, "timeout": 30}]'
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-consumer
+  namespace: microservice-test
+  labels:
+    app: api-consumer
+    service-type: consumer
+spec:
+  selector:
+    app: api-consumer
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  type: LoadBalancer  # For external access

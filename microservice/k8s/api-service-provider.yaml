@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service-provider
+  namespace: microservice-test
+  labels:
+    app: api-service-provider
+    service-type: provider
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-service-provider
+  template:
+    metadata:
+      labels:
+        app: api-service-provider
+        service-type: provider
+    spec:
+      containers:
+      - name: api-service
+        image: microservice:latest
+        imagePullPolicy: Never  # Use local image
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: SERVICE_NAME
+          value: "api-service"
+        - name: SERVICE_VERSION
+          value: "1.0.0"
+        - name: SERVICE_PORT
+          value: "8000"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: ENABLE_METRICS
+          value: "true"
+        - name: RATE_LIMIT
+          value: "1000"
+        - name: CONSUMER_SERVICES
+          value: "[]"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service-provider
+  namespace: microservice-test
+  labels:
+    app: api-service-provider
+    service-type: provider
+spec:
+  selector:
+    app: api-service-provider
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  type: ClusterIP

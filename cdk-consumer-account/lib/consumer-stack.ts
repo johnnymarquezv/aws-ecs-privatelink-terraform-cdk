@@ -22,12 +22,6 @@ const CONFIG = {
     image: 'microservice', // Will be replaced with ECR URL
     description: 'API Consumer Service'
   },
-  USER_CONSUMER: {
-    name: 'user-consumer',
-    port: 80,
-    image: 'microservice', // Will be replaced with ECR URL
-    description: 'User Consumer Service'
-  },
   
   // Environment-specific configuration
   ENVIRONMENTS: {
@@ -69,23 +63,20 @@ const CONFIG = {
   // VPC Endpoint Service IDs (hardcoded for each environment)
   VPC_ENDPOINT_SERVICES: {
     dev: {
-      'api-service': 'vpce-svc-1234567890abcdef0',
-      'user-service': 'vpce-svc-0987654321fedcba0'
+      'api-service': 'vpce-svc-1234567890abcdef0'
     },
     staging: {
-      'api-service': 'vpce-svc-staging-api-abcdef0',
-      'user-service': 'vpce-svc-staging-user-fedcba0'
+      'api-service': 'vpce-svc-staging-api-abcdef0'
     },
     prod: {
-      'api-service': 'vpce-svc-prod-api-abcdef0',
-      'user-service': 'vpce-svc-prod-user-fedcba0'
+      'api-service': 'vpce-svc-prod-api-abcdef0'
     }
   }
 } as const;
 
 export interface ConsumerStackProps extends cdk.StackProps {
   environment: 'dev' | 'staging' | 'prod';
-  serviceType: 'api-consumer' | 'user-consumer';
+  serviceType: 'api-consumer';
 }
 
 export class ConsumerStack extends cdk.Stack {
@@ -99,7 +90,7 @@ export class ConsumerStack extends cdk.Stack {
 
     const { environment, serviceType } = props;
     // Get service configuration based on service type
-    const serviceConfig = serviceType === 'api-consumer' ? CONFIG.API_CONSUMER : CONFIG.USER_CONSUMER;
+    const serviceConfig = CONFIG.API_CONSUMER;
     const envConfig = CONFIG.ENVIRONMENTS[environment];
 
     // Create VPC with all networking infrastructure
@@ -279,18 +270,6 @@ export class ConsumerStack extends cdk.Stack {
       this.consumerEndpoints.push(apiEndpoint);
     }
 
-    // Create endpoint for User service
-    if (serviceType === 'user-consumer' && endpointServices['user-service']) {
-      const userEndpoint = new ec2.InterfaceVpcEndpoint(this, 'UserServiceEndpoint', {
-        vpc: this.vpc,
-        service: new ec2.InterfaceVpcEndpointService(endpointServices['user-service']),
-        subnets: {
-          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-        },
-        securityGroups: [appSecurityGroup],
-      });
-      this.consumerEndpoints.push(userEndpoint);
-    }
 
     // Output VPC ID for cross-account connectivity
     new cdk.CfnOutput(this, 'VpcId', {
