@@ -27,7 +27,6 @@ cdk.json.bak
 *.swp
 *.swo
 *~
-peex.md
 
 # OS
 .DS_Store
