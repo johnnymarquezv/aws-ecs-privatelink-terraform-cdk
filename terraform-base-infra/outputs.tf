@@ -17,12 +17,12 @@ output "transit_gateway_route_table_id" {
 # Cross-account resources
 output "cross_account_role_arn" {
   description = "ARN of the cross-account role for resource access"
-  value       = aws_iam_role.cross_account_role.arn
+  value       = length(aws_iam_role.cross_account_role) > 0 ? aws_iam_role.cross_account_role[0].arn : null
 }
 
 output "transit_gateway_sharing_role_arn" {
   description = "ARN of the Transit Gateway sharing role"
-  value       = aws_iam_role.transit_gateway_sharing_role.arn
+  value       = length(aws_iam_role.transit_gateway_sharing_role) > 0 ? aws_iam_role.transit_gateway_sharing_role[0].arn : null
 }
 
 output "resource_share_arn" {
@@ -65,7 +65,7 @@ output "transit_gateway_route_table_id_parameter" {
 
 output "cross_account_role_arn_parameter" {
   description = "SSM Parameter Store parameter for cross-account role ARN"
-  value       = aws_ssm_parameter.cross_account_role_arn.name
+  value       = length(aws_ssm_parameter.cross_account_role_arn) > 0 ? aws_ssm_parameter.cross_account_role_arn[0].name : null
 }
 
 output "environment_parameter" {
@@ -80,5 +80,5 @@ output "networking_account_id_parameter" {
 
 output "microservices_accounts_parameter" {
   description = "SSM Parameter Store parameter for microservices accounts"
-  value       = aws_ssm_parameter.microservices_accounts.name
+  value       = length(aws_ssm_parameter.microservices_accounts) > 0 ? aws_ssm_parameter.microservices_accounts[0].name : null
 }
