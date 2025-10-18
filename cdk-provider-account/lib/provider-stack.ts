@@ -4,10 +4,9 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { TransitGatewayConnectivity } from './transit-gateway-connectivity';
-import { SsmParameterStore } from './ssm-parameter-store';
+import { ConnectivityConfig } from './ssm-parameter-store';
 // Database resources will be integrated directly into this stack
 
 // Hardcoded configuration constants
@@ -328,14 +327,14 @@ export class ProviderStack extends cdk.Stack {
     });
 
     // Create Transit Gateway connectivity
-    const ssmParams = new SsmParameterStore(this, 'SsmParameters', {
+    const connectivityConfig = new ConnectivityConfig(this, 'ConnectivityConfig', {
       environment: environment
     });
 
     this.transitGatewayConnectivity = new TransitGatewayConnectivity(this, 'TransitGatewayConnectivity', {
       vpc: this.vpc,
-      transitGatewayId: ssmParams.transitGatewayId,
-      transitGatewayRouteTableId: ssmParams.transitGatewayRouteTableId,
+      transitGatewayId: connectivityConfig.transitGatewayId,
+      transitGatewayRouteTableId: connectivityConfig.transitGatewayRouteTableId,
       environment: environment,
       accountType: 'provider',
       serviceName: serviceConfig.name
