@@ -5,62 +5,8 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
-import { TransitGatewayConnectivity } from './transit-gateway-connectivity';
-import { ConnectivityConfig } from './ssm-parameter-store';
+import { getServiceConfig, getEnvironmentConfig, getAccountConfig } from './config';
 // Database resources will be integrated directly into this stack
-
-// Hardcoded configuration constants
-const CONFIG = {
-  // Account configuration
-  PROVIDER_ACCOUNT_ID: '222222222222',
-  CONSUMER_ACCOUNT_ID: '333333333333',
-  REGION: 'us-east-1',
-  
-  // Service configuration
-  API_SERVICE: {
-    name: 'api-service',
-    port: 8080,
-    image: 'microservice', // Will be replaced with ECR URL
-    description: 'API Service Provider'
-  },
-  
-  // Environment-specific configuration
-  ENVIRONMENTS: {
-    dev: {
-      memoryLimitMiB: 512,
-      cpu: 256,
-      desiredCount: 1,
-      minCapacity: 1,
-      maxCapacity: 3,
-      vpcCidr: '10.1.0.0/16',
-      publicSubnetCidrs: ['10.1.1.0/24', '10.1.2.0/24'],
-      privateSubnetCidrs: ['10.1.3.0/24', '10.1.4.0/24'],
-      logRetentionDays: 7
-    },
-    staging: {
-      memoryLimitMiB: 1024,
-      cpu: 512,
-      desiredCount: 2,
-      minCapacity: 2,
-      maxCapacity: 5,
-      vpcCidr: '10.2.0.0/16',
-      publicSubnetCidrs: ['10.2.1.0/24', '10.2.2.0/24'],
-      privateSubnetCidrs: ['10.2.3.0/24', '10.2.4.0/24'],
-      logRetentionDays: 30
-    },
-    prod: {
-      memoryLimitMiB: 2048,
-      cpu: 1024,
-      desiredCount: 3,
-      minCapacity: 3,
-      maxCapacity: 10,
-      vpcCidr: '10.3.0.0/16',
-      publicSubnetCidrs: ['10.3.1.0/24', '10.3.2.0/24'],
-      privateSubnetCidrs: ['10.3.3.0/24', '10.3.4.0/24'],
-      logRetentionDays: 90
-    }
-  }
-} as const;
 
 export interface ProviderStackProps extends cdk.StackProps {
   environment: 'dev' | 'staging' | 'prod';
@@ -72,7 +18,6 @@ export class ProviderStack extends cdk.Stack {
   public readonly cluster: ecs.Cluster;
   public readonly nlb: elbv2.NetworkLoadBalancer;
   public readonly vpcEndpointService: ec2.VpcEndpointService;
-  public readonly transitGatewayConnectivity?: TransitGatewayConnectivity;
   // Database resources integrated directly
 
   constructor(scope: Construct, id: string, props: ProviderStackProps) {
@@ -80,14 +25,15 @@ export class ProviderStack extends cdk.Stack {
 
     const { environment, serviceType } = props;
     // Get service configuration based on service type
-    const serviceConfig = CONFIG.API_SERVICE;
-    const envConfig = CONFIG.ENVIRONMENTS[environment];
+    const serviceConfig = getServiceConfig(serviceType);
+    const envConfig = getEnvironmentConfig(environment);
+    const accountConfig = getAccountConfig(this.node.root as cdk.App, 'consumer');
 
     // Create VPC with all networking infrastructure
     this.vpc = new ec2.Vpc(this, 'ProviderVpc', {
       vpcName: `${serviceConfig.name}-${environment}-vpc`,
       ipAddresses: ec2.IpAddresses.cidr(envConfig.vpcCidr),
-      availabilityZones: [`${CONFIG.REGION}a`, `${CONFIG.REGION}b`],
+      availabilityZones: [`${accountConfig.region}a`, `${accountConfig.region}b`],
       enableDnsHostnames: true,
       enableDnsSupport: true,
       subnetConfiguration: [
@@ -294,7 +240,7 @@ export class ProviderStack extends cdk.Stack {
       vpcEndpointServiceLoadBalancers: [this.nlb],
       acceptanceRequired: true,
       allowedPrincipals: [
-        new iam.ArnPrincipal(`arn:aws:iam::${CONFIG.CONSUMER_ACCOUNT_ID}:root`)
+        new iam.ArnPrincipal(`arn:aws:iam::${accountConfig.accountId}:root`)
       ],
     });
 
@@ -326,19 +272,7 @@ export class ProviderStack extends cdk.Stack {
       exportName: `${serviceConfig.name}-${environment}-vpc-cidr`,
     });
 
-    // Create Transit Gateway connectivity
-    const connectivityConfig = new ConnectivityConfig(this, 'ConnectivityConfig', {
-      environment: environment
-    });
-
-    this.transitGatewayConnectivity = new TransitGatewayConnectivity(this, 'TransitGatewayConnectivity', {
-      vpc: this.vpc,
-      transitGatewayId: connectivityConfig.transitGatewayId,
-      transitGatewayRouteTableId: connectivityConfig.transitGatewayRouteTableId,
-      environment: environment,
-      accountType: 'provider',
-      serviceName: serviceConfig.name
-    });
+    // Transit Gateway connectivity removed - managed by Terraform
 
     // Database resources will be added here if needed
     // For now, we'll focus on the core microservice infrastructure
