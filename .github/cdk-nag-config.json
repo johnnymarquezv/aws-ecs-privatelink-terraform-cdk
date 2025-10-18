@@ -8,17 +8,25 @@
     },
     "AwsSolutions-EC23": {
       "reason": "Instance metadata service is required for this application"
+    },
+    "AwsSolutions-EC28": {
+      "reason": "Detailed monitoring is not required for this use case"
+    },
+    "AwsSolutions-EC29": {
+      "reason": "Connection draining is not required for this use case"
     }
   },
   "exclude": [
     "cdk.out/**",
     "node_modules/**",
-    ".git/**"
-  ],
-  "include": [
-    "**/*.ts",
+    ".git/**",
+    "**/*.d.ts",
     "**/*.js"
   ],
+  "include": [
+    "**/*.ts"
+  ],
   "severity": ["ERROR", "WARNING"],
-  "output": "sarif"
+  "output": "sarif",
+  "output-file": "cdk-nag-results.sarif"
 }

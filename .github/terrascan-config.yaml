@@ -1,0 +1,47 @@
+scan-rules:
+  categories:
+    - "AC_ACCESS"
+    - "AC_PERM"
+    - "AC_CRYPTO"
+    - "AC_NET"
+    - "AC_SEC"
+    - "AC_STOR"
+    - "AC_VULN"
+    - "AC_WEB"
+    - "AC_LOGG"
+    - "AC_MON"
+    - "AC_AVAIL"
+    - "AC_COST"
+    - "AC_PERF"
+    - "AC_MAINT"
+    - "AC_OPER"
+    - "AC_LEGAL"
+    - "AC_COMP"
+    - "AC_GOV"
+    - "AC_AUDIT"
+    - "AC_BC"
+    - "AC_DR"
+    - "AC_ARCH"
+    - "AC_DESIGN"
+    - "AC_IMPL"
+    - "AC_TEST"
+    - "AC_DEPLOY"
+    - "AC_OPS"
+    - "AC_SUPPORT"
+    - "AC_RETIRE"
+    - "AC_OTHER"
+
+severity:
+  - "HIGH"
+  - "MEDIUM"
+  - "LOW"
+
+output:
+  format: sarif
+  path: terrascan-results.sarif
+
+exclude:
+  - "cdk.out/**"
+  - "node_modules/**"
+  - ".git/**"
+  - "terraform.tfstate.d/**"

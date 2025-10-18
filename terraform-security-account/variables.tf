@@ -1,16 +1,16 @@
-# Hardcoded configuration constants
+# Hardcoded configuration for independent deployment
 locals {
   # Account configuration
   aws_region = "us-east-1"
-  account_id = "888888888888"  # Security Account ID
+  account_id = data.aws_caller_identity.current.account_id
   
-  # Organization accounts
+  # Organization accounts - empty for independent deployment
   organization_accounts = {
-    root_account_id         = "000000000000"
-    networking_account_id   = "111111111111"
-    shared_services_account_id = "999999999999"
-    provider_account_ids    = ["222222222222"]
-    consumer_account_ids    = ["333333333333"]
+    root_account_id         = ""
+    networking_account_id   = ""
+    shared_services_account_id = ""
+    provider_account_ids    = []
+    consumer_account_ids    = []
   }
   
   # Security configuration
@@ -46,3 +46,7 @@ locals {
   environment = terraform.workspace
   current_config = local.environment_config[local.environment]
 }
+
+# Data sources
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}

@@ -28,8 +28,9 @@ resource "aws_ec2_transit_gateway_route_table" "main" {
   }
 }
 
-# Cross-account IAM role for Transit Gateway sharing
+# Cross-account IAM role for Transit Gateway sharing (only if microservices accounts are specified)
 resource "aws_iam_role" "transit_gateway_sharing_role" {
+  count = length(local.microservices_accounts) > 0 ? 1 : 0
   name = "TransitGatewaySharingRole-${local.environment}"
   
   assume_role_policy = jsonencode({
@@ -59,10 +60,11 @@ resource "aws_iam_role" "transit_gateway_sharing_role" {
   }
 }
 
-# Policy for Transit Gateway sharing
+# Policy for Transit Gateway sharing (only if role exists)
 resource "aws_iam_role_policy" "transit_gateway_sharing_policy" {
+  count = length(local.microservices_accounts) > 0 ? 1 : 0
   name = "TransitGatewaySharingPolicy-${local.environment}"
-  role = aws_iam_role.transit_gateway_sharing_role.id
+  role = aws_iam_role.transit_gateway_sharing_role[0].id
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -107,16 +109,17 @@ resource "aws_ram_resource_association" "transit_gateway_association" {
   resource_share_arn = aws_ram_resource_share.transit_gateway_share.arn
 }
 
-# Share Transit Gateway with microservices accounts
+# Share Transit Gateway with microservices accounts (only if accounts are specified)
 resource "aws_ram_principal_association" "microservices_accounts" {
-  for_each = toset(local.microservices_accounts)
+  for_each = length(local.microservices_accounts) > 0 ? toset(local.microservices_accounts) : []
   
   principal          = each.value
   resource_share_arn = aws_ram_resource_share.transit_gateway_share.arn
 }
 
-# Cross-account role for general resource access (for monitoring, etc.)
+# Cross-account role for general resource access (only if microservices accounts are specified)
 resource "aws_iam_role" "cross_account_role" {
+  count = length(local.microservices_accounts) > 0 ? 1 : 0
   name = "CrossAccountRole-${local.environment}"
   
   assume_role_policy = jsonencode({
@@ -146,10 +149,11 @@ resource "aws_iam_role" "cross_account_role" {
   }
 }
 
-# Policy for cross-account resource access
+# Policy for cross-account resource access (only if role exists)
 resource "aws_iam_role_policy" "cross_account_policy" {
+  count = length(local.microservices_accounts) > 0 ? 1 : 0
   name = "CrossAccountPolicy-${local.environment}"
-  role = aws_iam_role.cross_account_role.id
+  role = aws_iam_role.cross_account_role[0].id
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -240,9 +244,10 @@ resource "aws_ssm_parameter" "transit_gateway_route_table_id" {
 }
 
 resource "aws_ssm_parameter" "cross_account_role_arn" {
+  count = length(local.microservices_accounts) > 0 ? 1 : 0
   name  = "/${local.environment}/connectivity/cross-account-role-arn"
   type  = "String"
-  value = aws_iam_role.cross_account_role.arn
+  value = aws_iam_role.cross_account_role[0].arn
 
   tags = {
     Name        = "Cross Account Role ARN Parameter"
@@ -277,6 +282,7 @@ resource "aws_ssm_parameter" "networking_account_id" {
 }
 
 resource "aws_ssm_parameter" "microservices_accounts" {
+  count = length(local.microservices_accounts) > 0 ? 1 : 0
   name  = "/${local.environment}/connectivity/microservices-accounts"
   type  = "StringList"
   value = join(",", local.microservices_accounts)

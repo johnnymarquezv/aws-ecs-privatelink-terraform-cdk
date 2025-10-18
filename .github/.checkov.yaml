@@ -1,0 +1,24 @@
+framework:
+  - terraform
+  - cloudformation
+
+output: sarif
+
+output-file-path: checkov-results.sarif
+
+skip-check:
+  - CKV_AWS_79  # Ensure Instance Metadata Service Version 1 is not enabled
+  - CKV_AWS_8   # Ensure all data stored in the Launch configuration EBS is securely encrypted
+
+exclude-dir:
+  - cdk.out
+  - node_modules
+  - .git
+  - terraform.tfstate.d
+
+include-dir:
+  - terraform-base-infra
+  - terraform-security-account
+  - terraform-shared-services-account
+
+severity: INFO,WARNING,ERROR

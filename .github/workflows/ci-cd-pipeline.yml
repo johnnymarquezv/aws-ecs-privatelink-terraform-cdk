@@ -1,4 +1,4 @@
-name: Build and Deploy Microservice
+name: CI/CD Pipeline
 
 on:
   push:
@@ -26,6 +26,11 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
 
     - name: Run Trivy vulnerability scanner
       id: trivy
@@ -92,145 +97,192 @@ jobs:
         safety check || echo "Safety scan completed with issues"
       continue-on-error: true
 
-    - name: Run Checkov for Infrastructure security
-      id: checkov
+    - name: Install Infrastructure Security Tools
       run: |
+        # Install Checkov
         pip install checkov
-        echo "Running Checkov on Terraform files..."
-        checkov -d . --framework terraform --output sarif --output-file-path checkov-results.sarif --verbose || echo "Terraform scan completed with issues"
-        echo "Running Checkov on CloudFormation files..."
-        checkov -d . --framework cloudformation --output sarif --output-file-path checkov-cfn-results.sarif --verbose || echo "CloudFormation scan completed with issues"
-        echo "Listing generated files:"
-        ls -la *.sarif || echo "No SARIF files found"
         
-        # Create minimal SARIF files if none were generated
-        if [ ! -f "checkov-results.sarif" ] && [ ! -f "checkov-cfn-results.sarif" ]; then
-          echo "Creating minimal SARIF file for successful scan..."
-          echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Checkov","version":"2.0.0"}},"results":[]}]}' > checkov-results.sarif
-        fi
-      continue-on-error: true
-
-    - name: Run tfsec for Terraform security analysis
-      id: tfsec
-      run: |
+        # Install Terrascan
+        curl -L "$(curl -s https://api.github.com/repos/tenable/terrascan/releases/latest | grep -o -E "https://.+?_Linux_x86_64.tar.gz")" -o terrascan.tar.gz
+        tar -xf terrascan.tar.gz terrascan
+        sudo mv terrascan /usr/local/bin/
+        
         # Install tfsec
-        curl -L "$(curl -s https://api.github.com/repos/aquasecurity/tfsec/releases/latest | grep -o -E "https://.+?/tfsec-linux-amd64" | head -n1)" -o tfsec
-        chmod +x tfsec
+        curl -L "$(curl -s https://api.github.com/repos/aquasecurity/tfsec/releases/latest | grep -o -E "https://.+?_linux_amd64.tar.gz")" -o tfsec.tar.gz
+        tar -xf tfsec.tar.gz tfsec
         sudo mv tfsec /usr/local/bin/
         
-        echo "Running tfsec on Terraform files..."
-        tfsec . --format sarif --out tfsec-results.sarif || echo "tfsec scan completed with issues"
-        
-        # Create minimal SARIF file if none was generated
-        if [ ! -f "tfsec-results.sarif" ]; then
-          echo "Creating minimal SARIF file for successful scan..."
-          echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"tfsec","version":"1.0.0"}},"results":[]}]}' > tfsec-results.sarif
-        fi
-      continue-on-error: true
-
-    - name: Run CDK Nag for CDK security analysis
-      id: cdk-nag
-      run: |
         # Install CDK Nag
         npm install -g cdk-nag
+
+    - name: Run Checkov Infrastructure Security Scan
+      id: checkov
+      run: |
+        echo "Running Checkov on Terraform files..."
+        checkov -d terraform-base-infra/ --config-file .github/.checkov.yaml --output sarif --output-file-path checkov-base-infra.sarif || echo "Base infra scan completed with issues"
+        checkov -d terraform-security-account/ --config-file .github/.checkov.yaml --output sarif --output-file-path checkov-security-account.sarif || echo "Security account scan completed with issues"
+        checkov -d . --framework terraform --output sarif --output-file-path checkov-results.sarif --verbose || echo "General Terraform scan completed with issues"
+        checkov -d . --framework cloudformation --output sarif --output-file-path checkov-cfn-results.sarif --verbose || echo "CloudFormation scan completed with issues"
         
+        # Create minimal SARIF files if none were generated
+        for file in checkov-base-infra.sarif checkov-security-account.sarif checkov-results.sarif checkov-cfn-results.sarif; do
+          if [ ! -f "$file" ]; then
+            echo "Creating minimal SARIF file for $file..."
+            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Checkov","version":"2.0.0"}},"results":[]}]}' > "$file"
+          fi
+        done
+      continue-on-error: true
+
+    - name: Run tfsec Terraform Security Analysis
+      id: tfsec
+      run: |
+        echo "Running tfsec on Terraform files..."
+        tfsec terraform-base-infra/ --format sarif --out tfsec-base-infra.sarif || echo "Base infra scan completed with issues"
+        tfsec terraform-security-account/ --format sarif --out tfsec-security-account.sarif || echo "Security account scan completed with issues"
+        tfsec . --format sarif --out tfsec-results.sarif || echo "General scan completed with issues"
+        
+        # Create minimal SARIF files if none were generated
+        for file in tfsec-base-infra.sarif tfsec-security-account.sarif tfsec-results.sarif; do
+          if [ ! -f "$file" ]; then
+            echo "Creating minimal SARIF file for $file..."
+            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"tfsec","version":"1.0.0"}},"results":[]}]}' > "$file"
+          fi
+        done
+      continue-on-error: true
+
+    - name: Run CDK Nag Security Analysis
+      id: cdk-nag
+      run: |
         echo "Running CDK Nag on CDK projects..."
         cd cdk-provider-account
         npm install
-        npx cdk-nag --output-format sarif --output-file-path ../cdk-nag-provider-results.sarif || echo "CDK Nag provider scan completed with issues"
+        cdk-nag --config ../.github/cdk-nag-config.json --output-format sarif --output-file-path ../cdk-nag-provider.sarif || echo "Provider CDK Nag scan completed with issues"
         cd ../cdk-consumer-account
         npm install
-        npx cdk-nag --output-format sarif --output-file-path ../cdk-nag-consumer-results.sarif || echo "CDK Nag consumer scan completed with issues"
+        cdk-nag --config ../.github/cdk-nag-config.json --output-format sarif --output-file-path ../cdk-nag-consumer.sarif || echo "Consumer CDK Nag scan completed with issues"
         cd ..
         
         # Create minimal SARIF files if none were generated
-        if [ ! -f "cdk-nag-provider-results.sarif" ]; then
-          echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"CDK-Nag","version":"2.0.0"}},"results":[]}]}' > cdk-nag-provider-results.sarif
-        fi
-        if [ ! -f "cdk-nag-consumer-results.sarif" ]; then
-          echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"CDK-Nag","version":"2.0.0"}},"results":[]}]}' > cdk-nag-consumer-results.sarif
-        fi
+        for file in cdk-nag-provider.sarif cdk-nag-consumer.sarif; do
+          if [ ! -f "$file" ]; then
+            echo "Creating minimal SARIF file for $file..."
+            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"CDK-Nag","version":"2.0.0"}},"results":[]}]}' > "$file"
+          fi
+        done
       continue-on-error: true
 
-    - name: Run Terrascan for additional infrastructure security
+    - name: Run Terrascan Security Analysis
       id: terrascan
       run: |
-        # Install Terrascan
-        curl -L "$(curl -s https://api.github.com/repos/tenable/terrascan/releases/latest | grep -o -E "https://.+?/terrascan_.*_Linux_x86_64.tar.gz" | head -n1)" -o terrascan.tar.gz
-        tar -xzf terrascan.tar.gz
-        sudo mv terrascan /usr/local/bin/
-        
         echo "Running Terrascan on infrastructure files..."
-        terrascan scan -d . -o sarif -f terrascan-results.sarif || echo "Terrascan scan completed with issues"
+        terrascan scan -d terraform-base-infra/ --config .github/terrascan-config.yaml --format sarif --output terrascan-base-infra.sarif || echo "Base infra scan completed with issues"
+        terrascan scan -d terraform-security-account/ --config .github/terrascan-config.yaml --format sarif --output terrascan-security-account.sarif || echo "Security account scan completed with issues"
+        terrascan scan -d . --format sarif --output terrascan-results.sarif || echo "General scan completed with issues"
         
-        # Create minimal SARIF file if none was generated
-        if [ ! -f "terrascan-results.sarif" ]; then
-          echo "Creating minimal SARIF file for successful scan..."
-          echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Terrascan","version":"1.0.0"}},"results":[]}]}' > terrascan-results.sarif
-        fi
+        # Create minimal SARIF files if none were generated
+        for file in terrascan-base-infra.sarif terrascan-security-account.sarif terrascan-results.sarif; do
+          if [ ! -f "$file" ]; then
+            echo "Creating minimal SARIF file for $file..."
+            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Terrascan","version":"1.0.0"}},"results":[]}]}' > "$file"
+          fi
+        done
       continue-on-error: true
 
-    - name: Check if Checkov SARIF file exists
-      id: checkov-file
-      run: |
-        if [ -f "checkov-results.sarif" ] || [ -f "checkov-cfn-results.sarif" ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
-          if [ -f "checkov-results.sarif" ]; then
-            echo "terraform_file=checkov-results.sarif" >> $GITHUB_OUTPUT
-          fi
-          if [ -f "checkov-cfn-results.sarif" ]; then
-            echo "cloudformation_file=checkov-cfn-results.sarif" >> $GITHUB_OUTPUT
-          fi
-        else
-          echo "exists=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Upload Checkov Terraform results
+    # Upload SARIF results
+    - name: Upload Checkov Base Infrastructure Results
       uses: github/codeql-action/upload-sarif@v3
-      if: always() && steps.checkov-file.outputs.terraform_file != ''
+      if: always()
       with:
-        sarif_file: '${{ steps.checkov-file.outputs.terraform_file }}'
-        category: 'checkov-terraform'
+        sarif_file: checkov-base-infra.sarif
+        category: checkov-base-infra
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload Checkov CloudFormation results
+    - name: Upload Checkov Security Account Results
       uses: github/codeql-action/upload-sarif@v3
-      if: always() && steps.checkov-file.outputs.cloudformation_file != ''
+      if: always()
       with:
-        sarif_file: '${{ steps.checkov-file.outputs.cloudformation_file }}'
-        category: 'checkov-cloudformation'
+        sarif_file: checkov-security-account.sarif
+        category: checkov-security-account
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload tfsec results
+    - name: Upload Checkov General Results
       uses: github/codeql-action/upload-sarif@v3
-      if: always() && hashFiles('tfsec-results.sarif') != ''
+      if: always()
       with:
-        sarif_file: 'tfsec-results.sarif'
-        category: 'tfsec'
+        sarif_file: checkov-results.sarif
+        category: checkov-general
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload CDK Nag Provider results
+    - name: Upload Checkov CloudFormation Results
       uses: github/codeql-action/upload-sarif@v3
-      if: always() && hashFiles('cdk-nag-provider-results.sarif') != ''
+      if: always()
       with:
-        sarif_file: 'cdk-nag-provider-results.sarif'
-        category: 'cdk-nag-provider'
+        sarif_file: checkov-cfn-results.sarif
+        category: checkov-cloudformation
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload CDK Nag Consumer results
+    - name: Upload tfsec Base Infrastructure Results
       uses: github/codeql-action/upload-sarif@v3
-      if: always() && hashFiles('cdk-nag-consumer-results.sarif') != ''
+      if: always()
       with:
-        sarif_file: 'cdk-nag-consumer-results.sarif'
-        category: 'cdk-nag-consumer'
+        sarif_file: tfsec-base-infra.sarif
+        category: tfsec-base-infra
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload Terrascan results
+    - name: Upload tfsec Security Account Results
       uses: github/codeql-action/upload-sarif@v3
-      if: always() && hashFiles('terrascan-results.sarif') != ''
+      if: always()
       with:
-        sarif_file: 'terrascan-results.sarif'
-        category: 'terrascan'
+        sarif_file: tfsec-security-account.sarif
+        category: tfsec-security-account
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload tfsec General Results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: tfsec-results.sarif
+        category: tfsec-general
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload CDK Nag Provider Results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: cdk-nag-provider.sarif
+        category: cdk-nag-provider
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload CDK Nag Consumer Results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: cdk-nag-consumer.sarif
+        category: cdk-nag-consumer
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Terrascan Base Infrastructure Results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: terrascan-base-infra.sarif
+        category: terrascan-base-infra
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Terrascan Security Account Results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: terrascan-security-account.sarif
+        category: terrascan-security-account
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Terrascan General Results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: terrascan-results.sarif
+        category: terrascan-general
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Security Scan Summary
@@ -244,10 +296,10 @@ jobs:
         echo "| CodeQL | ${{ steps.codeql.outcome }} | N/A |" >> $GITHUB_STEP_SUMMARY
         echo "| Bandit | ${{ steps.bandit.outcome }} | No |" >> $GITHUB_STEP_SUMMARY
         echo "| Safety | ${{ steps.safety.outcome }} | No |" >> $GITHUB_STEP_SUMMARY
-        echo "| Checkov | ${{ steps.checkov.outcome }} | ${{ steps.checkov-file.outputs.exists }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| tfsec | ${{ steps.tfsec.outcome }} | ${{ hashFiles('tfsec-results.sarif') != '' }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| CDK Nag | ${{ steps.cdk-nag.outcome }} | ${{ hashFiles('cdk-nag-*-results.sarif') != '' }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Terrascan | ${{ steps.terrascan.outcome }} | ${{ hashFiles('terrascan-results.sarif') != '' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Checkov | ${{ steps.checkov.outcome }} | Yes |" >> $GITHUB_STEP_SUMMARY
+        echo "| tfsec | ${{ steps.tfsec.outcome }} | Yes |" >> $GITHUB_STEP_SUMMARY
+        echo "| CDK Nag | ${{ steps.cdk-nag.outcome }} | Yes |" >> $GITHUB_STEP_SUMMARY
+        echo "| Terrascan | ${{ steps.terrascan.outcome }} | Yes |" >> $GITHUB_STEP_SUMMARY
 
   build-and-push:
     name: Build and Push Docker Image
@@ -326,7 +378,7 @@ jobs:
         cd cdk-provider-account
         npm install
         npx cdk bootstrap
-        npx cdk deploy --all --context environment=dev --require-approval never
+        npx cdk deploy --all --require-approval never
 
   deploy-dev-consumer:
     name: Deploy Consumer to Development
@@ -355,7 +407,7 @@ jobs:
         cd cdk-consumer-account
         npm install
         npx cdk bootstrap
-        npx cdk deploy --all --context environment=dev --require-approval never
+        npx cdk deploy --all --require-approval never
 
   deploy-staging:
     name: Deploy to Staging
@@ -392,7 +444,7 @@ jobs:
         cd cdk-provider-account
         npm install
         npx cdk bootstrap
-        npx cdk deploy --all --context environment=staging --require-approval never
+        npx cdk deploy --all --require-approval never
 
     - name: Deploy Consumer Infrastructure (Staging)
       if: matrix.account == 'consumer'
@@ -400,7 +452,7 @@ jobs:
         cd cdk-consumer-account
         npm install
         npx cdk bootstrap
-        npx cdk deploy --all --context environment=staging --require-approval never
+        npx cdk deploy --all --require-approval never
 
   deploy-prod:
     name: Deploy to Production
@@ -437,7 +489,7 @@ jobs:
         cd cdk-provider-account
         npm install
         npx cdk bootstrap
-        npx cdk deploy --all --context environment=prod --require-approval never
+        npx cdk deploy --all --require-approval never
 
     - name: Deploy Consumer Infrastructure (Production)
       if: matrix.account == 'consumer'
@@ -445,4 +497,4 @@ jobs:
         cd cdk-consumer-account
         npm install
         npx cdk bootstrap
-        npx cdk deploy --all --context environment=prod --require-approval never
+        npx cdk deploy --all --require-approval never

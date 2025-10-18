@@ -1,8 +1,8 @@
-# Hardcoded configuration constants
+# Hardcoded configuration for independent deployment
 locals {
   # Account configuration
   aws_region = "us-east-1"
-  account_id = "111111111111"  # Networking Account ID
+  account_id = data.aws_caller_identity.current.account_id
   
   # Network configuration
   vpc_cidr = "10.0.0.0/16"
@@ -10,8 +10,8 @@ locals {
   private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
   isolated_subnet_cidrs = ["10.0.5.0/28", "10.0.6.0/28"]
   
-  # Multi-account configuration
-  microservices_accounts = ["222222222222", "333333333333"]  # Provider and Consumer accounts
+  # Multi-account configuration - empty for independent deployment
+  microservices_accounts = []
   
   # Environment-specific configuration
   environment_config = {
@@ -36,3 +36,7 @@ locals {
   environment = terraform.workspace
   current_config = local.environment_config[local.environment]
 }
+
+# Data sources
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
